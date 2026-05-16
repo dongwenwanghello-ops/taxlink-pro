@@ -1,0 +1,148 @@
+{
+  "name": "JobPost",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Job title"
+    },
+    "description": {
+      "type": "string",
+      "description": "Detailed job description"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "tax_return",
+        "bookkeeping",
+        "payroll",
+        "vat",
+        "corporation_tax",
+        "audit",
+        "advisory",
+        "other"
+      ],
+      "description": "Job category"
+    },
+    "budget_type": {
+      "type": "string",
+      "enum": [
+        "fixed",
+        "hourly"
+      ],
+      "description": "Budget type"
+    },
+    "budget_amount": {
+      "type": "number",
+      "description": "Budget amount in GBP"
+    },
+    "starting_bid": {
+      "type": "number",
+      "description": "Minimum/starting bid in GBP (optional)"
+    },
+    "location": {
+      "type": "string",
+      "description": "Job location"
+    },
+    "remote": {
+      "type": "boolean",
+      "default": true,
+      "description": "Remote work available"
+    },
+    "duration": {
+      "type": "string",
+      "enum": [
+        "one_off",
+        "short_term",
+        "long_term",
+        "ongoing"
+      ],
+      "description": "Expected duration"
+    },
+    "required_qualifications": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Required professional qualifications"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "open",
+        "in_progress",
+        "closed",
+        "expired",
+        "awarded"
+      ],
+      "default": "open",
+      "description": "Job status"
+    },
+    "company_name": {
+      "type": "string",
+      "description": "Client company name"
+    },
+    "deadline": {
+      "type": "string",
+      "format": "date",
+      "description": "Application deadline"
+    },
+    "bidding_deadline": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Deadline for submitting bids (ISO 8601) \u2014 REQUIRED"
+    },
+    "bidding_period": {
+      "type": "string",
+      "enum": [
+        "24h",
+        "3d",
+        "5d",
+        "7d"
+      ],
+      "description": "Bidding period duration"
+    },
+    "complexity": {
+      "type": "string",
+      "enum": [
+        "simple",
+        "medium",
+        "complex"
+      ],
+      "description": "Project complexity level"
+    },
+    "urgency": {
+      "type": "string",
+      "enum": [
+        "flexible",
+        "within_month",
+        "within_2weeks",
+        "within_week",
+        "urgent"
+      ],
+      "description": "Project urgency"
+    },
+    "services": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Services requested"
+    },
+    "clarity_score": {
+      "type": "number",
+      "description": "0-100 project description clarity score"
+    },
+    "_user_posted": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether posted by app user (vs demo data)"
+    }
+  },
+  "required": [
+    "title",
+    "description",
+    "category",
+    "bidding_deadline"
+  ]
+}

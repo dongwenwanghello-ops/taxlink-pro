@@ -1,0 +1,134 @@
+{
+  "name": "ProfessionalProfile",
+  "type": "object",
+  "properties": {
+    "full_name": {
+      "type": "string",
+      "description": "Professional's full name"
+    },
+    "title": {
+      "type": "string",
+      "description": "Professional title e.g. Chartered Accountant, Tax Advisor"
+    },
+    "bio": {
+      "type": "string",
+      "description": "Short professional bio"
+    },
+    "specialisations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Areas of expertise"
+    },
+    "qualifications": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Professional qualifications e.g. ACA, ACCA, CTA"
+    },
+    "industries": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Industries served e.g. Tech, Property, Retail"
+    },
+    "software_expertise": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Accounting software known e.g. Xero, QuickBooks, Sage"
+    },
+    "hourly_rate": {
+      "type": "number",
+      "description": "Hourly rate in GBP"
+    },
+    "location": {
+      "type": "string",
+      "description": "City or region in UK"
+    },
+    "years_experience": {
+      "type": "number",
+      "description": "Years of professional experience"
+    },
+    "completed_jobs": {
+      "type": "number",
+      "default": 0,
+      "description": "Number of completed jobs on the platform"
+    },
+    "repeat_clients": {
+      "type": "number",
+      "default": 0,
+      "description": "Number of clients who have hired this professional more than once"
+    },
+    "availability": {
+      "type": "string",
+      "enum": [
+        "available",
+        "limited",
+        "unavailable"
+      ],
+      "default": "available",
+      "description": "Current availability status"
+    },
+    "visibility": {
+      "type": "string",
+      "enum": [
+        "public",
+        "hidden",
+        "private"
+      ],
+      "default": "public",
+      "description": "Profile visibility"
+    },
+    "profile_image_url": {
+      "type": "string",
+      "description": "URL to profile image"
+    },
+    "linkedin_url": {
+      "type": "string",
+      "description": "LinkedIn profile URL"
+    },
+    "remote_work": {
+      "type": "boolean",
+      "default": true,
+      "description": "Available for remote work"
+    },
+    "reputation_score": {
+      "type": "number",
+      "default": 0,
+      "description": "Computed 0-100 reputation score used for ranking and AI matching"
+    },
+    "trust_badges": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Earned trust badges e.g. top_rated, fast_responder, repeat_hire, verified_specialist"
+    },
+    "avg_communication": {
+      "type": "number",
+      "description": "Average communication rating from reviews"
+    },
+    "avg_technical": {
+      "type": "number",
+      "description": "Average technical quality rating from reviews"
+    },
+    "avg_professionalism": {
+      "type": "number",
+      "description": "Average professionalism rating from reviews"
+    },
+    "response_rate": {
+      "type": "number",
+      "default": 100,
+      "description": "Percentage of enquiries responded to within 24h"
+    }
+  },
+  "required": [
+    "full_name",
+    "title"
+  ]
+}

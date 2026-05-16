@@ -1,0 +1,68 @@
+{
+  "name": "FeedbackEntry",
+  "type": "object",
+  "properties": {
+    "trust": {
+      "type": "string",
+      "description": "yes or no \u2014 trust answer"
+    },
+    "confidence": {
+      "type": "number",
+      "description": "0-100 confidence percentage from drag slider"
+    },
+    "trust_pct": {
+      "type": "number",
+      "description": "0-100 trust drag value from phase 1"
+    },
+    "readiness_pct": {
+      "type": "number",
+      "description": "0-100 readiness drag value from phase 2"
+    },
+    "avg_score": {
+      "type": "number",
+      "description": "0-100 composite score across all phases"
+    },
+    "findexpert": {
+      "type": "string",
+      "description": "yes or no \u2014 could find expert"
+    },
+    "page": {
+      "type": "string",
+      "description": "Page path where feedback was given"
+    },
+    "sentiment": {
+      "type": "string",
+      "enum": [
+        "positive",
+        "neutral",
+        "negative"
+      ],
+      "description": "Computed overall sentiment"
+    },
+    "reaction_type": {
+      "type": "string",
+      "description": "swipe / vibe / pulse / trust_progress"
+    },
+    "component": {
+      "type": "string",
+      "description": "Which component triggered feedback"
+    },
+    "session_id": {
+      "type": "string",
+      "description": "Anonymous session identifier"
+    },
+    "device": {
+      "type": "string",
+      "enum": [
+        "mobile",
+        "desktop"
+      ],
+      "description": "Device type at time of interaction"
+    },
+    "phases_completed": {
+      "type": "number",
+      "description": "How many phases (0-3) the user completed"
+    }
+  },
+  "required": []
+}

@@ -1,0 +1,78 @@
+{
+  "name": "Review",
+  "type": "object",
+  "properties": {
+    "professional_id": {
+      "type": "string",
+      "description": "ID of the ProfessionalProfile being reviewed"
+    },
+    "project_id": {
+      "type": "string",
+      "description": "ID of the completed JobPost this review relates to"
+    },
+    "project_title": {
+      "type": "string",
+      "description": "Denormalized project title for display"
+    },
+    "reviewer_name": {
+      "type": "string",
+      "description": "Name of the reviewer (client)"
+    },
+    "reviewer_company": {
+      "type": "string",
+      "description": "Reviewer's company"
+    },
+    "rating": {
+      "type": "number",
+      "description": "Overall rating from 1 to 5"
+    },
+    "communication_rating": {
+      "type": "number",
+      "description": "Communication quality rating 1-5"
+    },
+    "technical_rating": {
+      "type": "number",
+      "description": "Technical quality of work rating 1-5"
+    },
+    "professionalism_rating": {
+      "type": "number",
+      "description": "Professionalism rating 1-5"
+    },
+    "value_rating": {
+      "type": "number",
+      "description": "Value for money rating 1-5"
+    },
+    "comment": {
+      "type": "string",
+      "description": "Main review comment \u2014 detailed written feedback encouraged"
+    },
+    "service_type": {
+      "type": "string",
+      "description": "Type of service reviewed e.g. Self Assessment, R&D Tax Credits"
+    },
+    "verified": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether this review is verified (linked to a completed project)"
+    },
+    "would_rehire": {
+      "type": "boolean",
+      "description": "Whether the client would hire this professional again"
+    },
+    "review_type": {
+      "type": "string",
+      "enum": [
+        "client_to_professional",
+        "professional_to_client"
+      ],
+      "default": "client_to_professional",
+      "description": "Direction of the review"
+    }
+  },
+  "required": [
+    "professional_id",
+    "rating",
+    "reviewer_name",
+    "comment"
+  ]
+}
