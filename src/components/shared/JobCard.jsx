@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Clock, Briefcase, Wifi, ArrowRight, Users, TrendingUp, Gavel, ShieldCheck, ChevronDown, ChevronUp } from "lucide-react";
@@ -8,6 +8,11 @@ import { Link } from "react-router-dom";
 import BidModal from "./BidModal.jsx";
 import WinChanceIndicator from "./WinChanceIndicator.jsx";
 import CountdownBadge from "./CountdownBadge.jsx";
+import { useBiddingCountdown } from "@/hooks/useBiddingCountdown";
+import { resolveDeadline } from "@/lib/countdownUtils";
+import { scoreMarketplaceProject } from "@/lib/marketplaceIntelligence";
+import { getBidCountForProject } from "@/lib/bidStore";
+import { cn } from "@/lib/utils";
 
 const SERVICE_LABELS = {
   self_assessment: "Self Assessment", vat_return: "VAT Return",
@@ -38,38 +43,147 @@ const durationLabels = {
   one_off: "One-off", short_term: "1–3 months", long_term: "3+ months", ongoing: "Ongoing",
 };
 
+const urgencyLabels = {
+  negotiable: "Negotiable",
+  flexible: "Negotiable",
+  standard: "Standard",
+  within_month: "Within 1 month",
+  within_2weeks: "Within 2 weeks",
+  within_week: "Within 1 week",
+  urgent: "Urgent",
+  asap: "ASAP",
+};
+
+function cleanDisplayTitle(title = "") {
+  const cleaned = title
+    .replace(/\s+[—-]\s*(simple|medium|complex)\s+complexity$/i, "")
+    .replace(/\b(simple|medium|complex)\s+complexity\b/gi, "")
+    .replace(/\bcomplexity\b/gi, "")
+    .replace(/\s+[—-]\s*$/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  return cleaned || title;
+}
+
+function formatCurrency(value) {
+  return `£${Math.round(value).toLocaleString()}`;
+}
+
+function getBudgetDisplay(job, marketplaceScore) {
+  if (job.starting_bid) {
+    return {
+      label: "Starting from",
+      value: formatCurrency(job.starting_bid),
+      tone: "emerald",
+    };
+  }
+
+  if (job.budget_amount) {
+    return {
+      label: "Budget from",
+      value: formatCurrency(job.budget_amount),
+      tone: "primary",
+    };
+  }
+
+  const range = marketplaceScore?.recommendedBudgetRange;
+  if (range?.min && range?.max) {
+    return {
+      label: "Estimated budget",
+      value: `${formatCurrency(range.min)}-${formatCurrency(range.max)}`,
+      tone: "violet",
+    };
+  }
+
+  return {
+    label: "Estimated budget",
+    value: "Pricing pending",
+    tone: "muted",
+  };
+}
+
+const budgetToneClasses = {
+  emerald: "bg-emerald-50 border-emerald-200 text-emerald-700",
+  primary: "bg-primary/5 border-primary/20 text-primary",
+  violet: "bg-violet-50 border-violet-200 text-violet-700",
+  muted: "bg-secondary border-border text-foreground",
+};
+
 
 
 export default function JobCard({ job }) {
   const [showBidModal, setShowBidModal] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const [bidCount, setBidCount] = useState(0);
+  const [bidCount, setBidCount] = useState(() => getBidCountForProject(job.id));
+  const { isClosed: biddingClosed, isOpen: biddingOpen, hasDeadline } = useBiddingCountdown(job, {
+    startDate: job.created_date,
+    biddingPeriod: job.bidding_period,
+  });
+  const deadline = resolveDeadline(job);
 
   const catColor = categoryColors[job.category] || categoryColors.other;
   const catLabel = categoryLabels[job.category] || job.category;
   const postedAgo = job.created_date ? formatDistanceToNow(new Date(job.created_date), { addSuffix: true }) : null;
+  const marketplaceScore = useMemo(() => scoreMarketplaceProject({
+    category: job.category,
+    complexity: job.complexity || "medium",
+    urgency: job.urgency || "negotiable",
+    biddingPeriod: job.bidding_period,
+    biddingDeadline: job.bidding_deadline,
+    budgetAmount: job.budget_amount,
+    remote: job.remote,
+    missingRecords: job.missing_records,
+    multipleIncomeSources: job.multiple_income_sources,
+    internationalTaxIssues: job.international_tax_issues,
+    estimatedWorkload: job.estimated_workload,
+    deadlinePressure: job.deadline_pressure,
+    descriptionLength: job.description?.length || 0,
+  }), [job]);
+  const budgetDisplay = getBudgetDisplay(job, marketplaceScore);
+  const displayTitle = cleanDisplayTitle(job.title);
 
   useEffect(() => {
     const refresh = () => {
-      // Count bids from DB via bidSubmitted event (actual count tracked in MyBids/MyProjects)
-      // For the card, we rely on the count passed up or default to 0 until bid is submitted
+      setBidCount(getBidCountForProject(job.id));
     };
     window.addEventListener("bidSubmitted", refresh);
+    refresh();
     return () => window.removeEventListener("bidSubmitted", refresh);
   }, [job.id]);
 
   return (
     <>
-      <div className="group bg-card border border-border/70 rounded-2xl overflow-hidden transition-all duration-200 hover:shadow-lg hover:shadow-primary/6 hover:border-primary/30">
+      <div
+        className={cn(
+          "group bg-card border border-border/70 rounded-2xl overflow-hidden transition-all duration-200",
+          biddingClosed
+            ? "opacity-[0.72] hover:shadow-none hover:border-border/70"
+            : "hover:shadow-lg hover:shadow-primary/6 hover:border-primary/30",
+        )}
+      >
 
-        <div className="p-5 pb-3">
-          <div className="flex items-start gap-4">
+        <div className="p-4 sm:p-5 pb-3">
+          <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4">
             <div className="flex-1 min-w-0">
-              <div className="flex flex-wrap items-center gap-1.5 mb-2">
-                {job.status === "open" && (
+              <div className="flex items-start justify-between gap-3">
+                <Link to={`/projects/${job.id}`} className="min-w-0">
+                  <h3 className="text-base sm:text-lg font-semibold text-foreground group-hover:text-primary transition-colors leading-snug hover:underline underline-offset-2">
+                    {displayTitle}
+                  </h3>
+                </Link>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                {biddingOpen && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-semibold">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                     Open for bids
+                  </span>
+                )}
+                {!biddingOpen && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-600 text-[11px] font-semibold">
+                    Bidding closed
                   </span>
                 )}
                 <Badge variant="outline" className={`text-[11px] font-medium ${catColor}`}>{catLabel}</Badge>
@@ -78,59 +192,51 @@ export default function JobCard({ job }) {
                     <Wifi className="h-3 w-3" />Remote
                   </Badge>
                 )}
+                {job.urgency && (
+                  <Badge variant="secondary" className="text-[11px] font-normal">
+                    {urgencyLabels[job.urgency] || job.urgency}
+                  </Badge>
+                )}
                 {job._user_posted && (
                   <span className="px-2 py-0.5 rounded-full bg-violet-600 text-white text-[10px] font-bold">Just Posted</span>
                 )}
               </div>
-
-              <Link to={`/projects/${job.id}`}>
-                <h3 className="text-base font-semibold text-foreground group-hover:text-primary transition-colors leading-snug hover:underline underline-offset-2">
-                  {job.title}
-                </h3>
-              </Link>
-              {job.services?.length > 0 && (
-                <div className="flex flex-wrap gap-1 mt-1.5">
-                  {job.services.map(svc => (
-                    <span key={svc} className="px-2 py-0.5 rounded-md bg-primary/8 border border-primary/20 text-primary text-[10px] font-semibold">
-                      {SERVICE_LABELS[svc] || svc}
-                    </span>
-                  ))}
-                </div>
-              )}
               {job.company_name && (
-                <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
                   <Briefcase className="h-3 w-3 shrink-0" />{job.company_name}
                 </p>
               )}
             </div>
 
-            <div className="shrink-0 text-right">
-              {job.starting_bid ? (
-                <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 min-w-[110px]">
-                  <p className="text-[9px] text-emerald-700 font-semibold uppercase tracking-widest mb-0.5">Open bids from</p>
-                  <div className="text-base font-extrabold text-emerald-700 leading-none">
-                    £{job.starting_bid.toLocaleString()}
-                  </div>
+            <div className="shrink-0 sm:text-right">
+              <div className={cn("rounded-xl px-3 py-2 min-w-[132px] border", budgetToneClasses[budgetDisplay.tone])}>
+                <p className="text-[9px] font-semibold uppercase tracking-widest mb-0.5 opacity-75">{budgetDisplay.label}</p>
+                <div className="text-base font-extrabold leading-none whitespace-nowrap">
+                  {budgetDisplay.value}
                 </div>
-              ) : job.budget_amount ? (
-                <div className="bg-primary/5 border border-primary/20 rounded-xl px-3 py-2 min-w-[90px]">
-                  <p className="text-[9px] text-muted-foreground font-semibold uppercase tracking-widest mb-0.5">Budget from</p>
-                  <div className="text-base font-extrabold text-primary leading-none">
-                    £{job.budget_amount.toLocaleString()}
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-secondary rounded-xl px-3 py-2 min-w-[80px]">
-                  <p className="text-[9px] text-muted-foreground font-semibold uppercase tracking-widest mb-0.5">Budget</p>
-                  <div className="text-sm font-bold text-foreground">Open bids</div>
-                </div>
-              )}
+              </div>
             </div>
           </div>
 
           <div className="mt-3 space-y-2">
+            {hasDeadline && biddingOpen && (
+              <CountdownBadge
+                deadline={deadline}
+                startDate={job.created_date}
+                biddingPeriod={job.bidding_period}
+                showDeadlineHint={false}
+              />
+            )}
             <WinChanceIndicator bidCount={bidCount} />
-            {job.bidding_deadline && <CountdownBadge deadline={job.bidding_deadline} compact={true} />}
+            {job.services?.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {job.services.map(svc => (
+                  <span key={svc} className="px-2 py-0.5 rounded-md bg-secondary/70 border border-border/60 text-muted-foreground text-[10px] font-semibold">
+                    {SERVICE_LABELS[svc] || svc}
+                  </span>
+                ))}
+              </div>
+            )}
             <div className="flex items-center gap-3 px-3 py-2 rounded-xl border bg-secondary/50 border-border/50 text-xs text-muted-foreground">
               <Clock className="h-3.5 w-3.5 shrink-0" />
               {postedAgo ? <span>Posted {postedAgo}</span> : <span>Recently posted</span>}
@@ -194,12 +300,18 @@ export default function JobCard({ job }) {
           </div>
           <Button
             size="sm"
-            onClick={() => setShowBidModal(true)}
-            className="rounded-lg text-xs h-8 font-semibold gap-1.5 shrink-0 bg-gradient-to-r from-violet-600 to-primary border-0"
+            disabled={biddingClosed}
+            onClick={() => !biddingClosed && setShowBidModal(true)}
+            className={cn(
+              "rounded-lg text-xs h-8 font-semibold gap-1.5 shrink-0 border-0",
+              biddingClosed
+                ? "bg-muted text-muted-foreground cursor-not-allowed opacity-60"
+                : "bg-gradient-to-r from-violet-600 to-primary",
+            )}
           >
             <Gavel className="h-3.5 w-3.5" />
-            Submit Your Quote
-            <ArrowRight className="h-3.5 w-3.5" />
+            {biddingClosed ? "Bidding Closed" : "Submit Your Quote"}
+            {!biddingClosed && <ArrowRight className="h-3.5 w-3.5" />}
           </Button>
         </div>
       </div>

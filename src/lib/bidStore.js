@@ -33,6 +33,27 @@ export function updateBidStatus(bidId, status) {
   window.dispatchEvent(new CustomEvent("bidUpdated", { detail: { bidId, status } }));
 }
 
+export function updateBidsForProject(projectId, updater) {
+  const updatedBids = getAllBids().map((bid) => {
+    if (bid.project_id !== projectId) return bid;
+    return typeof updater === "function" ? updater(bid) : { ...bid, ...updater };
+  });
+  localStorage.setItem(KEY, JSON.stringify(updatedBids));
+  window.dispatchEvent(new CustomEvent("bidUpdated", { detail: { projectId } }));
+  return updatedBids.filter((bid) => bid.project_id === projectId);
+}
+
+export function awardProjectBid(projectId, winningBidId) {
+  const awardedAt = new Date().toISOString();
+  return updateBidsForProject(projectId, (bid) => ({
+    ...bid,
+    status: bid.id === winningBidId ? "accepted" : "rejected",
+    awarded: bid.id === winningBidId,
+    awarded_at: bid.id === winningBidId ? awardedAt : bid.awarded_at,
+    rejection_reason: bid.id === winningBidId ? undefined : "Project awarded to another professional",
+  }));
+}
+
 export function getBidCountForProject(projectId) {
   return getBidsForProject(projectId).length;
 }

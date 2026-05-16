@@ -37,6 +37,10 @@ function FactorRow({ label, score, maxScore = 100, icon: Icon, isPositive, detai
 
 export default function WinChanceBreakdown({
   percent,
+  displayRange,
+  label,
+  summary,
+  insights = [],
   priceScore,
   competitionScore,
   trustScore,
@@ -57,7 +61,7 @@ export default function WinChanceBreakdown({
 
   const bgColor = isHigh ? "border-emerald-200 bg-emerald-50" : isMedium ? "border-amber-200 bg-amber-50" : "border-rose-200 bg-rose-50";
   const textColor = isHigh ? "text-emerald-700" : isMedium ? "text-amber-700" : "text-rose-700";
-  const labelText = isHigh ? "High opportunity" : isMedium ? "Moderate chance" : "Challenging";
+  const labelText = label || (isHigh ? "Strong position" : isMedium ? "Competitive" : "Low chance");
   const emoji = isHigh ? "🔥" : isMedium ? "⚡" : "⚠️";
 
   // Prepare factors for breakdown
@@ -122,16 +126,28 @@ export default function WinChanceBreakdown({
             <span className="text-2xl">{emoji}</span>
             <p className={`font-bold text-sm ${textColor}`}>{labelText}</p>
           </div>
-          <p className={`text-3xl font-black tabular-nums ${textColor}`}>{percent}% Win Chance</p>
+          <p className={`text-3xl font-black tabular-nums ${textColor}`}>{displayRange || `${percent}%`} Competitiveness</p>
           <p className="text-xs text-muted-foreground mt-1">
-            {isHigh
+            {summary || (isHigh
               ? "Strong position. Your bid, reputation, and market timing align well."
               : isMedium
                 ? "Competitive. Strengthen your proposal or response speed to stand out."
-                : "Difficult. Consider reviewing your pricing or waiting for less competitive projects."}
+                : "Difficult. Consider reviewing your pricing or waiting for less competitive projects.")}
           </p>
         </div>
       </div>
+
+      {insights.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Key signals</p>
+          {insights.slice(0, 3).map((insight, i) => (
+            <div key={i} className="flex items-start gap-1.5 rounded-lg bg-white/50 border border-current border-opacity-10 px-2.5 py-1.5 text-xs text-muted-foreground">
+              <CheckCircle2 className="h-3 w-3 shrink-0 mt-0.5 text-emerald-600" />
+              <span>{insight.text}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Factor breakdown */}
       <div className="space-y-3">

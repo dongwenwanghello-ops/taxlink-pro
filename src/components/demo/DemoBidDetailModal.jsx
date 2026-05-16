@@ -1,9 +1,13 @@
-import React, { useState } from "react";
+import React from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { X, Clock, Users, Star, TrendingUp, Zap, CheckCircle2, AlertCircle, Info } from "lucide-react";
+import { X, Clock, Users, Star, TrendingUp, Zap, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+
+/** Must sit above FeedbackWidget (z-[60]) so footer CTAs receive clicks */
+const MODAL_LAYER = "z-[10050]";
 
 export default function DemoBidDetailModal({ bid, onClose }) {
   const navigate = useNavigate();
@@ -13,19 +17,28 @@ export default function DemoBidDetailModal({ bid, onClose }) {
     navigate("/jobs");
   };
 
-  return (
+  return createPortal(
     <AnimatePresence>
       <motion.div
-        className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        className={`fixed inset-0 ${MODAL_LAYER} flex items-end sm:items-center justify-center p-4 pointer-events-none`}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        role="dialog"
+        aria-modal="true"
       >
-        <motion.div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
         <motion.div
-          className="relative w-full max-w-lg bg-card border border-border rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
+          className="absolute inset-0 z-0 bg-black/50 backdrop-blur-sm pointer-events-auto"
+          onClick={onClose}
+          aria-hidden
+        />
+        <motion.div
+          className="relative z-10 pointer-events-auto w-full max-w-lg bg-card border border-border rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
           initial={{ opacity: 0, y: 40, scale: 0.96 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 20, scale: 0.96 }}
           transition={{ type: "spring", stiffness: 320, damping: 28 }}
+          onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
@@ -39,7 +52,7 @@ export default function DemoBidDetailModal({ bid, onClose }) {
           </div>
 
           {/* Content */}
-          <div className="overflow-y-auto flex-1 p-5 space-y-5">
+          <div className="overflow-y-auto flex-1 min-h-0 p-5 space-y-5 overscroll-contain">
 
             {/* Your Bid Summary */}
             <div className="rounded-xl bg-primary/5 border border-primary/20 p-4 space-y-3">
@@ -59,14 +72,34 @@ export default function DemoBidDetailModal({ bid, onClose }) {
               </div>
             </div>
 
+            {(bid.qualifications?.length > 0 || bid.years_experience) && (
+              <div className="rounded-xl border border-primary/15 bg-primary/5 p-4 space-y-2">
+                <p className="text-xs font-bold text-primary uppercase tracking-widest">Professional Credentials</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {bid.qualifications?.map((qualification) => (
+                    <span key={qualification} className="px-2.5 py-1 rounded-full bg-white border border-primary/15 text-primary text-xs font-bold">
+                      {qualification}
+                    </span>
+                  ))}
+                  {bid.years_experience && (
+                    <span className="px-2.5 py-1 rounded-full bg-violet-50 border border-violet-200 text-violet-700 text-xs font-bold">
+                      {bid.years_experience} experience
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Win Probability */}
             <div className={`rounded-xl border p-4 space-y-3 ${bid.winColor}`}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Zap className={`h-4 w-4 ${bid.winIconColor}`} />
-                  <span className="font-semibold text-xs uppercase tracking-widest">Win Probability</span>
+                  <span className="font-semibold text-xs uppercase tracking-widest">Bid Competitiveness</span>
                 </div>
-                <p className={`text-2xl font-extrabold ${bid.winIconColor}`}>{Math.round(bid.win_probability)}%</p>
+                <p className={`text-2xl font-extrabold ${bid.winIconColor}`}>
+                  {typeof bid.win_probability === "number" ? `${Math.round(bid.win_probability)}%` : bid.win_probability}
+                </p>
               </div>
               <p className="text-xs text-muted-foreground">{bid.win_analysis}</p>
             </div>
@@ -148,16 +181,21 @@ export default function DemoBidDetailModal({ bid, onClose }) {
           </div>
 
           {/* Footer */}
-          <div className="border-t border-border/40 px-5 py-4 flex gap-3 shrink-0 bg-secondary/20">
-            <Button variant="outline" onClick={onClose} className="flex-1 h-10 rounded-xl text-sm">
+          <div className="relative z-20 border-t border-border/40 px-5 py-4 flex gap-3 shrink-0 bg-secondary/20">
+            <Button type="button" variant="outline" onClick={onClose} className="flex-1 h-10 rounded-xl text-sm">
               Close
             </Button>
-            <Button onClick={handleBrowseProjects} className="flex-1 h-10 rounded-xl text-sm bg-gradient-to-r from-violet-600 to-primary border-0 hover:shadow-lg hover:shadow-primary/30">
+            <Button
+              type="button"
+              onClick={handleBrowseProjects}
+              className="flex-1 h-10 rounded-xl text-sm bg-gradient-to-r from-violet-600 to-primary border-0 hover:shadow-lg hover:shadow-primary/30"
+            >
               Browse Open Projects
             </Button>
           </div>
         </motion.div>
       </motion.div>
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,7 +8,9 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, ArrowRight, Sparkles, RefreshCw, CheckCircle2, Loader2, Send, Users, Clock, TrendingUp, ShieldCheck, Zap } from "lucide-react";
 import PricingEstimate from "@/components/postjob/PricingEstimate";
 import MarketplaceIntelligence from "@/components/shared/MarketplaceIntelligence";
+import { scoreMarketplaceProject } from "@/lib/marketplaceIntelligence";
 import { base44 } from "@/api/base44Client";
+import { saveProject } from "@/lib/projectStore";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -32,14 +34,255 @@ const COMPLEXITY = [
 ];
 
 const URGENCY = [
-   { value: "flexible", label: "Flexible", desc: "No strict deadline — open-ended timeline" },
-   { value: "within_month", label: "Within 1 month", desc: "Needed in 2–4 weeks" },
-   { value: "within_2weeks", label: "Within 2 weeks", desc: "Needed in 1–2 weeks" },
-   { value: "within_week", label: "Within 1 week", desc: "Needed urgently — 3–7 days" },
-   { value: "urgent", label: "Urgent / ASAP", desc: "Critical — needed within 24–48 hours" },
+   { value: "negotiable", label: "Negotiable", desc: "Timeline can be agreed with the professional" },
+   { value: "standard", label: "Standard", desc: "Reasonable deadline — usually 2–4 weeks" },
+   { value: "urgent", label: "Urgent", desc: "Time-sensitive — usually 3–7 days" },
+   { value: "asap", label: "ASAP", desc: "Critical — needed within 24–48 hours" },
 ];
 
+const CATEGORY_BY_SERVICE = {
+  self_assessment: "tax_return",
+  vat_return: "vat",
+  corporation_tax: "corporation_tax",
+  rd_claim: "corporation_tax",
+  payroll: "payroll",
+  bookkeeping: "bookkeeping",
+  tax_investigation: "advisory",
+  capital_gains: "advisory",
+  inheritance_tax: "advisory",
+  other: "other",
+};
 
+const SERVICE_BRIEF_COPY = {
+  self_assessment: {
+    noun: "self assessment tax return",
+    title: "Self Assessment Tax Return Preparation",
+    context: "The client needs a practical review of personal tax information before the return is finalised and filed.",
+    situation: "Income records, allowances and any reliefs should be checked carefully so the filing position is accurate before submission.",
+    deliverables: ["Review income sources, allowances and available records", "Prepare the self assessment tax return for client review", "Identify any missing information or obvious tax relief points", "File the return with HMRC once approved"],
+  },
+  vat_return: {
+    noun: "VAT return",
+    title: "Quarterly VAT Return Preparation",
+    context: "The business needs support preparing a VAT return from bookkeeping records and source documentation.",
+    situation: "The records should be checked for VAT coding issues, missing transactions and any inconsistencies before the return is submitted.",
+    deliverables: ["Review VAT control account, sales and purchase records", "Check VAT treatment on key transactions", "Identify missing invoices, coding issues or reconciliation differences", "Prepare the VAT return and support Making Tax Digital submission"],
+  },
+  corporation_tax: {
+    noun: "corporation tax filing",
+    title: "Corporation Tax and CT600 Compliance Support",
+    context: "The company needs year-end corporation tax support based on its accounts and supporting records.",
+    situation: "The tax computation should be prepared or reviewed alongside the CT600, with any adjustments clearly explained.",
+    deliverables: ["Review year-end accounts, trial balance and supporting schedules", "Prepare corporation tax computations and adjustments", "Prepare or review the CT600 before submission", "Flag any records or director/shareholder points requiring clarification"],
+  },
+  rd_claim: {
+    noun: "R&D tax relief claim",
+    title: "R&D Tax Relief Claim Review and Submission Support",
+    context: "The company is looking to assess whether project activity and expenditure can support an R&D tax relief claim.",
+    situation: "The claim will need careful review of technical activity, costs and evidence before any submission is made.",
+    deliverables: ["Review qualifying projects, cost categories and available evidence", "Prepare the R&D calculation and technical narrative", "Identify evidence gaps or risk areas before submission", "Support preparation of the claim pack for HMRC"],
+  },
+  payroll: {
+    noun: "payroll processing",
+    title: "Payroll Processing and RTI Compliance Support",
+    context: "The business needs reliable payroll support for employees and related HMRC reporting.",
+    situation: "Payroll details should be checked for accuracy before payslips, RTI filings and related reports are prepared.",
+    deliverables: ["Review employee details, pay rates and payroll changes", "Process payroll for the agreed period", "Prepare payslips, RTI submissions and summary reports", "Highlight pension, starter/leaver or payroll compliance points where relevant"],
+  },
+  bookkeeping: {
+    noun: "bookkeeping review",
+    title: "Bookkeeping Review and Reconciliation Support",
+    context: "The business needs its bookkeeping reviewed and brought into a cleaner position for reporting or compliance work.",
+    situation: "The ledger may need transaction coding checks, bank reconciliations and a review of missing or inconsistent records.",
+    deliverables: ["Review bookkeeping records and transaction coding", "Reconcile bank, VAT and control accounts where applicable", "Identify missing transactions, duplicate entries or inconsistencies", "Prepare a clean summary for VAT, accounts or management reporting"],
+  },
+  tax_investigation: {
+    noun: "HMRC enquiry support",
+    title: "HMRC Enquiry Response and Tax Investigation Support",
+    context: "The client needs support responding to HMRC correspondence in a measured and well-documented way.",
+    situation: "The professional will need to review the enquiry background, available records and HMRC's questions before drafting a response.",
+    deliverables: ["Review HMRC correspondence, deadlines and background facts", "Assess the records needed to support the response", "Prepare draft responses and supporting schedules", "Advise on next steps and potential risk areas"],
+  },
+  capital_gains: {
+    noun: "capital gains tax advice",
+    title: "Capital Gains Tax Calculation and Reporting Support",
+    context: "The client needs a capital gains tax calculation prepared from disposal and acquisition records.",
+    situation: "The calculation should consider available base cost information, reliefs and reporting deadlines before submission.",
+    deliverables: ["Review disposal proceeds, acquisition costs and supporting records", "Calculate the gain or loss and any available reliefs", "Advise on UK reporting requirements and payment deadlines", "Prepare a clear summary for client review or filing"],
+  },
+  inheritance_tax: {
+    noun: "inheritance tax planning",
+    title: "Inheritance Tax Planning and Estate Review Support",
+    context: "The client is seeking inheritance tax guidance based on estate or planning information.",
+    situation: "The work should focus on understanding the asset position, available allowances and practical planning options.",
+    deliverables: ["Review estate, asset or planning information provided", "Identify relevant inheritance tax considerations and allowances", "Prepare practical recommendations and next steps", "Flag any information needed before detailed advice is finalised"],
+  },
+  other: {
+    noun: "tax advisory support",
+    title: "Tax Advisory Review and Practical Guidance",
+    context: "The client needs practical tax advice based on the facts and records available.",
+    situation: "The professional should clarify the scope, review the background and provide clear recommendations.",
+    deliverables: ["Review the background, records and client objectives", "Advise on the relevant UK tax position", "Set out practical next steps and filing requirements", "Identify any records or specialist points requiring further review"],
+  },
+};
+
+const BRIEF_STYLES = [
+  "concise project coordinator brief",
+  "direct client engagement request",
+  "commercial advisory brief",
+  "practical records-first brief",
+];
+
+const URGENCY_ALIASES = {
+  flexible: "Negotiable",
+  within_month: "Standard",
+  within_2weeks: "Standard",
+  within_week: "Urgent",
+};
+
+const getUrgencyLabel = (value) => URGENCY.find(u => u.value === value)?.label || URGENCY_ALIASES[value] || value?.replace(/_/g, " ");
+
+const cleanText = (value) => String(value || "").trim().replace(/\s+/g, " ");
+const toBudgetNumber = (value) => {
+  const parsed = Number(String(value || "").replace(/[^\d.]/g, ""));
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null;
+};
+const formatBudget = (value) => `£${Math.round(value).toLocaleString()}`;
+const sentence = (value) => {
+  const text = cleanText(value);
+  if (!text) return "";
+  const capitalized = text.charAt(0).toUpperCase() + text.slice(1);
+  return /[.!?]$/.test(capitalized) ? capitalized : `${capitalized}.`;
+};
+
+function inferClientType(companyName, selectedServices) {
+  const text = cleanText(companyName).toLowerCase();
+  const businessServices = ["vat_return", "corporation_tax", "rd_claim", "payroll", "bookkeeping"];
+  if (/\b(ltd|limited|llp|plc|company|business|partners|group)\b/i.test(text)) return "business";
+  if (selectedServices.some((svc) => businessServices.includes(svc))) return "business";
+  return "individual";
+}
+
+function getServiceCopy(selectedServices) {
+  const services = selectedServices.length ? selectedServices : ["other"];
+  return services.map((svc) => SERVICE_BRIEF_COPY[svc] || SERVICE_BRIEF_COPY.other);
+}
+
+function getTitleQualifier({ selectedServices, answers, clientType }) {
+  const text = `${answers.what} ${answers.company} ${answers.complications}`.toLowerCase();
+  const has = (svc) => selectedServices.includes(svc);
+
+  if (/(property|rental|landlord|buy.to.let|portfolio)/i.test(text)) return "for Property Investor";
+  if (/(ecommerce|e-commerce|online|shopify|amazon|retail)/i.test(text)) return "for Ecommerce Business";
+  if (/(startup|software|saas|technology|tech)/i.test(text)) return "for Tech Company";
+  if (has("payroll")) return "for UK Employer";
+  if (has("self_assessment") && clientType === "business") return "for Business Owner";
+  if (clientType === "business" && (has("vat_return") || has("bookkeeping") || has("corporation_tax"))) return "for Small UK Business";
+  return "";
+}
+
+function sanitizeProjectTitle(title, fallbackTitle) {
+  const cleaned = cleanText(title)
+    .replace(/\s+[—-]\s+(simple|medium|complex)\s+complexity$/i, "")
+    .replace(/\b(simple|medium|complex)\s+complexity\b/gi, "")
+    .replace(/\b(complexity)\b/gi, "")
+    .replace(/\b(support support|assistance support)\b/gi, "Support")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  const tooLong = cleaned.length > 72 || cleaned.split(/\s+/).length > 10;
+  const tooGeneric = /^(tax advisory support|project support|accounting support)$/i.test(cleaned);
+  const awkward = /,.*—| for [A-Z][\w\s&'.-]{10,}$/.test(cleaned) && cleaned.length > 62;
+
+  return tooLong || tooGeneric || awkward ? fallbackTitle : cleaned || fallbackTitle;
+}
+
+function buildProfessionalTitle({ selectedServices, answers, clientType, styleIndex }) {
+  const services = selectedServices.length ? selectedServices : ["other"];
+  const copies = getServiceCopy(services);
+  const has = (svc) => services.includes(svc);
+  const variant = styleIndex % 3;
+  const qualifier = getTitleQualifier({ selectedServices: services, answers, clientType });
+  const withQualifier = (title) => qualifier ? `${title} ${qualifier}` : title;
+
+  if (has("bookkeeping") && has("vat_return")) {
+    return withQualifier([
+      "Bookkeeping & VAT Review",
+      "Quarterly VAT Return Support",
+      "VAT Reconciliation & Filing",
+    ][variant]);
+  }
+  if (has("corporation_tax") && has("bookkeeping")) return withQualifier("Year-End Accounts Review");
+  if (has("corporation_tax")) return withQualifier(variant === 0 ? "Corporation Tax Filing" : "CT600 Filing Assistance");
+  if (has("vat_return")) return withQualifier(variant === 0 ? "Quarterly VAT Return Support" : "VAT Reconciliation & Filing");
+  if (has("payroll")) return withQualifier("Payroll & RTI Support");
+  if (has("self_assessment")) return withQualifier(clientType === "business" ? "Personal Tax Return Support" : "Self Assessment Tax Return");
+  if (has("rd_claim")) return withQualifier("R&D Tax Claim Assistance");
+  if (has("tax_investigation")) return withQualifier("HMRC Enquiry Support");
+  if (has("capital_gains")) return withQualifier("Capital Gains Tax Support");
+  if (has("inheritance_tax")) return withQualifier("Inheritance Tax Review");
+
+  if (copies.length > 1) {
+    const shortLabels = copies.slice(0, 2).map((copy) => copy.title.replace(/ (Preparation|Compliance|Support|Review|Assistance|Filing|and|Tax)/gi, "").trim());
+    return withQualifier(`${shortLabels.join(" & ")} Support`);
+  }
+  return withQualifier(copies[0].title.replace(/ Preparation| Compliance| Review| Submission/g, ""));
+}
+
+function buildFallbackBrief({
+  selectedServices,
+  serviceName,
+  complexityLabel,
+  urgencyLabel,
+  answers,
+  clientType,
+  recordsReady,
+  projectConditions,
+  styleIndex,
+}) {
+  const copies = getServiceCopy(selectedServices);
+  const clientName = cleanText(answers.company);
+  const clientLabel = clientName || (clientType === "business" ? "A UK business" : "A UK individual");
+  const primaryCopy = copies[0] || SERVICE_BRIEF_COPY.other;
+  const openingVariants = [
+    `${clientLabel} is seeking support with ${copies.map((copy) => copy.noun).join(" and ")}.`,
+    `${clientLabel} would like to appoint a UK tax or accounting professional to help finalise ${copies.map((copy) => copy.noun).join(" and ")}.`,
+    `${clientLabel} needs a reliable adviser to review the records and progress ${copies.map((copy) => copy.noun).join(" and ")} through to a practical conclusion.`,
+  ];
+  const deliverables = [...new Set(copies.flatMap((copy) => copy.deliverables))].slice(0, 6);
+  const recordsLine = recordsReady
+    ? "The core records appear to be available and should be ready for review."
+    : projectConditions.missingRecords
+      ? "Some records may need organising or requesting before the work can be completed."
+      : "The records position should be confirmed at the start of the engagement.";
+  const timelineLine = answers.deadline
+    ? `Target deadline: ${cleanText(answers.deadline)}.`
+    : urgencyLabel === "Negotiable"
+      ? "Timing is negotiable and can be agreed with the appointed professional."
+      : `Timing is marked as ${urgencyLabel.toLowerCase()}, so availability should be confirmed before work begins.`;
+  const background = [
+    primaryCopy.context,
+    clientType === "business" && selectedServices.some((svc) => ["bookkeeping", "vat_return", "payroll", "corporation_tax"].includes(svc))
+      ? "The brief is suitable for a business that wants its compliance work handled accurately without adding pressure to internal admin time."
+      : "",
+  ].filter(Boolean).join(" ");
+  const currentSituation = [
+    sentence(answers.what),
+    primaryCopy.situation,
+    projectConditions.multipleIncomeSources ? "The work may involve more than one income stream or record source." : "",
+    projectConditions.internationalTaxIssues ? "There may be international or cross-border tax points to consider." : "",
+  ].filter(Boolean).join(" ");
+
+  return [
+    `**Scope of Work**\n${openingVariants[styleIndex % openingVariants.length]} The expected complexity is ${complexityLabel.toLowerCase()}, with the work to be completed remotely unless otherwise agreed.`,
+    `**Business Background**\n${background || `${clientLabel} has provided an initial outline for ${serviceName.toLowerCase()} and would like the scope confirmed before work begins.`}`,
+    `**Current Situation**\n${currentSituation || `The records and filing position need to be reviewed before the final scope and next steps are agreed.`}`,
+    `**Deliverables**\n${deliverables.map((item) => `- ${item}`).join("\n")}`,
+    `**Records Available**\n${recordsLine}${answers.records ? ` ${sentence(answers.records)}` : ""}`,
+    `**Timeline**\n${timelineLine}`,
+    answers.complications ? `**Additional Notes**\n${sentence(answers.complications)}` : "",
+  ].filter(Boolean).join("\n\n");
+}
 
 function StepIndicator({ step, total }) {
   return (
@@ -90,13 +333,63 @@ export default function PostJob() {
   const [complexity, setComplexity] = useState("");
   const [urgency, setUrgency] = useState("");
   const [biddingPeriod, setBiddingPeriod] = useState(""); // New: bidding deadline period
+  const [openingBudget, setOpeningBudget] = useState("");
   const [answers, setAnswers] = useState({ what: "", deadline: "", records: "", complications: "", company: "" });
   const [generatedBrief, setGeneratedBrief] = useState("");
   const [projectTitle, setProjectTitle] = useState("");
   const [published, setPublished] = useState(false);
   const [publishedTitle, setPublishedTitle] = useState("");
+  const generationRef = useRef(0);
 
   const recordsReady = /ready|yes|have|prepared|all set/i.test(answers.records);
+  const combinedAnswers = `${answers.what} ${answers.records} ${answers.complications}`.toLowerCase();
+  const projectConditions = {
+    missingRecords: !recordsReady && /missing|not ready|no records|organis|organize|sort|incomplete|bank statement|receipt/i.test(combinedAnswers),
+    multipleIncomeSources: /rental|property|dividend|self.employ|sole trader|capital gain|shares|crypto|foreign income|multiple income|pension|employment.*rental/i.test(combinedAnswers),
+    internationalTaxIssues: /foreign|overseas|international|non.?resident|domicile|double tax|expat|abroad|cross.?border/i.test(combinedAnswers),
+  };
+  const estimatedWorkload = projectConditions.internationalTaxIssues
+    ? "specialist"
+    : projectConditions.missingRecords || projectConditions.multipleIncomeSources || serviceType.length > 1
+      ? "heavy"
+      : complexity === "simple"
+        ? "light"
+        : "standard";
+  const deadlinePressure = urgency === "asap" ? "critical" : urgency === "urgent" ? "high" : "normal";
+  const openingBudgetAmount = toBudgetNumber(openingBudget);
+  const budgetSuggestionScore = scoreMarketplaceProject({
+    category: CATEGORY_BY_SERVICE[serviceType[0]] || serviceType[0] || "other",
+    complexity: complexity || "medium",
+    urgency: urgency || "negotiable",
+    biddingPeriod: biddingPeriod || "7d",
+    remote: true,
+    missingRecords: projectConditions.missingRecords,
+    multipleIncomeSources: projectConditions.multipleIncomeSources,
+    internationalTaxIssues: projectConditions.internationalTaxIssues,
+    estimatedWorkload,
+    deadlinePressure,
+    descriptionLength: answers.what?.length || 0,
+  });
+  const budgetRange = budgetSuggestionScore.recommendedBudgetRange;
+  const budgetSuggestions = [
+    { label: `From ${formatBudget(budgetRange.min)}`, value: budgetRange.min },
+    { label: `${formatBudget(budgetRange.min)}-${formatBudget(budgetRange.midpoint)}`, value: budgetRange.min },
+    { label: `${formatBudget(budgetRange.midpoint)}-${formatBudget(budgetRange.max)}`, value: budgetRange.midpoint },
+  ];
+  const selectedBudgetScore = openingBudgetAmount ? scoreMarketplaceProject({
+    category: CATEGORY_BY_SERVICE[serviceType[0]] || serviceType[0] || "other",
+    complexity: complexity || "medium",
+    urgency: urgency || "negotiable",
+    biddingPeriod: biddingPeriod || "7d",
+    budgetAmount: openingBudgetAmount,
+    remote: true,
+    missingRecords: projectConditions.missingRecords,
+    multipleIncomeSources: projectConditions.multipleIncomeSources,
+    internationalTaxIssues: projectConditions.internationalTaxIssues,
+    estimatedWorkload,
+    deadlinePressure,
+    descriptionLength: answers.what?.length || 0,
+  }) : budgetSuggestionScore;
 
   const toggleServiceType = (value) => {
     setServiceType(prev =>
@@ -104,80 +397,139 @@ export default function PostJob() {
     );
   };
 
-  const generateBrief = async () => {
+  const generateBrief = async ({ regenerate = false } = {}) => {
+    if (generating) return;
     setGenerating(true);
+    setStep(3);
+    const styleIndex = generationRef.current++;
 
     const serviceName = serviceType.map(v => SERVICE_TYPES.find(s => s.value === v)?.label ?? v).join(", ");
     const complexityLabel = COMPLEXITY.find(c => c.value === complexity)?.label ?? complexity;
-    const urgencyLabel = URGENCY.find(u => u.value === urgency)?.label ?? urgency;
+    const urgencyLabel = getUrgencyLabel(urgency);
+    const clientType = inferClientType(answers.company, serviceType);
+    const clientLabel = answers.company ? `${answers.company} (${clientType})` : clientType;
+    const generatedTitle = buildProfessionalTitle({
+      selectedServices: serviceType,
+      answers,
+      clientType,
+      styleIndex,
+    });
+    const style = BRIEF_STYLES[styleIndex % BRIEF_STYLES.length];
+    const copies = getServiceCopy(serviceType);
+    const businessContext = copies.map((copy) => copy.context).join(" ");
+    const currentSituation = copies.map((copy) => copy.situation).join(" ");
+    const practicalDeliverables = [...new Set(copies.flatMap((copy) => copy.deliverables))].slice(0, 7).join("; ");
+    const previousContent = regenerate && generatedBrief
+      ? `\nPrevious draft to avoid repeating:\nTitle: ${projectTitle}\nBrief:\n${generatedBrief}\n`
+      : "";
 
-    const titleMap = {
-      self_assessment: "Self Assessment Tax Return",
-      vat_return: "VAT Return Preparation",
-      corporation_tax: "Corporation Tax Filing",
-      rd_claim: "R&D Tax Credit Claim",
-      payroll: "Payroll Processing Project",
-      bookkeeping: "Bookkeeping & Accounts",
-      tax_investigation: "HMRC Tax Investigation Support",
-      capital_gains: "Capital Gains Tax Calculation",
-      inheritance_tax: "Inheritance Tax Planning",
-      other: "Tax Advisory Project",
-    };
-    const primaryType = serviceType[0];
-    const generatedTitle = serviceType.length === 1
-      ? `${titleMap[primaryType] ?? serviceName} — ${complexityLabel} Complexity`
-      : `${serviceName} — ${complexityLabel} Complexity`;
+    const prompt = `Write a realistic project brief for a serious UK accounting and tax marketplace.
 
-    const prompt = `You are writing a professional project brief for a UK tax and accounting marketplace. The brief will be published publicly so that qualified UK accountants and tax professionals can bid on it.
+The brief will be read by qualified UK accountants, tax advisers, bookkeepers, and payroll professionals before they decide whether to bid.
 
-Write a polished, structured project description in formal UK business English. Use the following structured format with clear section headings:
+Writing style:
+- Professional UK business English, but natural enough to sound written by a real client or project coordinator.
+- Commercially realistic: mention records, reconciliation, compliance, review points, filing/submission, and practical next steps where relevant.
+- Use concrete accounting/tax language. Avoid vague descriptions and keyword stuffing.
+- Do not sound like marketing copy, a chatbot, or a generic proposal.
+- Avoid these phrases and close variants: "This project covers", "requires professional assistance", "completion of all associated tasks", "please note that", "various", "seamless", "comprehensive solution", "leveraging expertise".
+- Do not invent turnover, dates, software, employee counts, tax amounts, or HMRC facts unless provided.
+- Use clean spacing and consistent markdown section headings.
+- Use short, credible paragraphs and practical deliverable bullets.
+- Keep the brief between 230 and 340 words.
+- Tone variation for this version: ${style}.
 
-**Scope**
+Title rules:
+- 4 to 8 words where possible.
+- Maximum 65 characters.
+- Make it instantly scannable in a project feed.
+- State the core work, not the whole brief.
+- Do not include the company name unless essential.
+- Do not mention complexity, urgency, "project", or "complexity".
+- Add at most one meaningful qualifier, such as "for Small UK Business" or "for Property Investor".
+- Good examples: "Quarterly VAT Return Support", "Bookkeeping & VAT Review", "Corporation Tax Filing", "Year-End Accounts Review", "Payroll & CIS Support", "R&D Tax Claim Assistance".
+
+Return only this format:
+TITLE: <one natural professional title>
+
+**Scope of Work**
+...
+
+**Business Background**
+...
+
+**Current Situation**
+...
+
 **Deliverables**
-**Requirements**
-**Deadline & Availability**
-**Additional Considerations** (only if relevant — omit if nothing to add)
+- ...
 
-Rules:
-- Every sentence must begin with a capital letter.
-- Use formal, professional UK English throughout. No casual language.
-- Do not use first-person ("I need", "we want"). Write in third-person ("The client requires…").
-- Do not use filler phrases like "Please note that" or "It is worth mentioning".
-- Be specific and concrete — avoid vague terms like "various" or "some".
-- Do not invent or assume facts not provided below.
-- Each section should be 1–3 concise sentences or a short bullet list. Keep the whole brief under 250 words.
-- Do not include a preamble or closing remarks. Start directly with the **Scope** heading.
+**Records Available**
+...
 
-Project details provided by the client:
+**Timeline**
+...
+
+**Additional Notes**
+...
+
+Omit Additional Notes if there is nothing relevant.
+
+Project details:
 - Services required: ${serviceName}
-- Complexity level: ${complexityLabel}
-- Urgency: ${urgencyLabel}
-- Client/company: ${answers.company || "Not specified"}
-- Description of work needed: ${answers.what}
-- Deadline: ${answers.deadline || "Not specified"}
+- Complexity: ${complexityLabel}
+- Timeline/urgency: ${urgencyLabel}
+- Opening budget: ${openingBudgetAmount ? formatBudget(openingBudgetAmount) : "Not set"}
+- Delivery: Remote
+- Client type: ${clientLabel}
+- Service-specific business context to use if relevant: ${businessContext}
+- Practical current situation to reflect if relevant: ${currentSituation}
+- Practical deliverables to adapt, not copy mechanically: ${practicalDeliverables}
+- Work requested: ${answers.what}
+- Client deadline: ${answers.deadline || "Not specified"}
 - Records status: ${answers.records || "Not specified"}
-- Special circumstances: ${answers.complications || "None"}
-
-Write the project brief now:`;
+- Missing records likely: ${projectConditions.missingRecords ? "Yes" : "No"}
+- Multiple income sources likely: ${projectConditions.multipleIncomeSources ? "Yes" : "No"}
+- International or specialist tax issues likely: ${projectConditions.internationalTaxIssues ? "Yes" : "No"}
+- Additional circumstances: ${answers.complications || "None"}
+${previousContent}
+Write a fresh, publication-ready brief now.`;
 
     try {
       const result = await base44.integrations.Core.InvokeLLM({ prompt });
-      // Ensure description starts with a capital letter (safety net)
       const cleaned = (typeof result === "string" ? result : String(result)).trim();
-      const safe = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
-      setGeneratedBrief(safe);
-      setProjectTitle(generatedTitle);
+      const titleMatch = cleaned.match(/^TITLE:\s*(.+)$/im);
+      const aiTitle = titleMatch?.[1]?.trim();
+      const brief = cleaned
+        .replace(/^TITLE:\s*.+$/im, "")
+        .replace(/^\s+/, "")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+      setGeneratedBrief(brief || buildFallbackBrief({
+        selectedServices: serviceType,
+        serviceName,
+        complexityLabel,
+        urgencyLabel,
+        answers,
+        clientType,
+        recordsReady,
+        projectConditions,
+        styleIndex,
+      }));
+      setProjectTitle(sanitizeProjectTitle(aiTitle, generatedTitle));
       setStep(4);
     } catch (err) {
-      // Fallback to a clean template if LLM fails
-      const clientRef = answers.company ? answers.company : "The client";
-      const brief = [
-        `**Scope**\n${clientRef} requires professional assistance with ${serviceName} (${complexityLabel.toLowerCase()} complexity). ${answers.what.charAt(0).toUpperCase() + answers.what.slice(1).trim()}`,
-        `**Deliverables**\nCompletion of all associated ${serviceName.toLowerCase()} tasks, including preparation, review, and HMRC submission as applicable.`,
-        `**Requirements**\nBids are welcomed from verified UK professionals holding relevant qualifications (ACA, ACCA, CTA, ATT or equivalent). Please include your credentials, relevant experience, and a proposed timeline with your bid.`,
-        `**Deadline & Availability**\n${answers.deadline ? `Required by: ${answers.deadline}.` : "Timing is flexible."} All work can be completed remotely.`,
-        answers.complications ? `**Additional Considerations**\n${answers.complications.charAt(0).toUpperCase() + answers.complications.slice(1).trim()}` : "",
-      ].filter(Boolean).join("\n\n");
+      const brief = buildFallbackBrief({
+        selectedServices: serviceType,
+        serviceName,
+        complexityLabel,
+        urgencyLabel,
+        answers,
+        clientType,
+        recordsReady,
+        projectConditions,
+        styleIndex,
+      });
       setGeneratedBrief(brief);
       setProjectTitle(generatedTitle);
       setStep(4);
@@ -186,7 +538,43 @@ Write the project brief now:`;
     }
   };
 
-  const handleSubmit = async () => {
+  const buildProjectPayload = () => {
+    const now = new Date();
+    const deadlineDate = new Date(now);
+    const daysMap = { "24h": 1, "3d": 3, "5d": 5, "7d": 7 };
+    deadlineDate.setDate(deadlineDate.getDate() + (daysMap[biddingPeriod] || 7));
+
+    return {
+      title: projectTitle.trim(),
+      description: generatedBrief.trim(),
+      services: serviceType,
+      category: CATEGORY_BY_SERVICE[serviceType[0]] || "other",
+      complexity,
+      urgency,
+      bidding_period: biddingPeriod,
+      bidding_deadline: deadlineDate.toISOString(),
+      budget_amount: openingBudgetAmount,
+      starting_bid: openingBudgetAmount,
+      budget_type: "fixed",
+      status: "open",
+      accepting_bids: true,
+      openForBids: true,
+      remote: true,
+      missing_records: projectConditions.missingRecords,
+      multiple_income_sources: projectConditions.multipleIncomeSources,
+      international_tax_issues: projectConditions.internationalTaxIssues,
+      estimated_workload: estimatedWorkload,
+      deadline_pressure: deadlinePressure,
+      company_name: answers.company || null,
+      duration: "one_off",
+      required_qualifications: [],
+      _user_posted: true,
+    };
+  };
+
+  const handleSubmit = async (e) => {
+    e?.preventDefault();
+
     if (!projectTitle.trim() || !generatedBrief.trim()) {
       toast.error("Please ensure your project title and description are complete.");
       return;
@@ -195,35 +583,42 @@ Write the project brief now:`;
       toast.error("Please select a project urgency/timeline.");
       return;
     }
+    if (!biddingPeriod) {
+      toast.error("Please select how long bidding should stay open.");
+      return;
+    }
+    if (!openingBudgetAmount) {
+      toast.error("Please enter an opening budget or choose one of the suggested ranges.");
+      return;
+    }
+
     setSubmitting(true);
+    const payload = buildProjectPayload();
+
     try {
-      // Calculate bidding deadline based on selected period
-      const now = new Date();
-      const deadlineDate = new Date(now);
-      const daysMap = { "24h": 1, "3d": 3, "5d": 5, "7d": 7 };
-      deadlineDate.setDate(deadlineDate.getDate() + (daysMap[biddingPeriod] || 7));
-      
-      const project = await base44.entities.JobPost.create({
-         title: projectTitle,
-         description: generatedBrief,
-         services: serviceType,
-         category: serviceType[0] || "other",
-         complexity,
-         urgency,
-         bidding_period: biddingPeriod,
-         bidding_deadline: deadlineDate.toISOString(),
-         status: "open",
-        remote: true,
-        company_name: answers.company || null,
-        duration: "one_off",
-        required_qualifications: [],
+      const project = await base44.entities.JobPost.create(payload);
+      saveProject({
+        ...payload,
+        ...project,
         _user_posted: true,
+        status: "open",
+        accepting_bids: true,
+        openForBids: true,
       });
-      window.dispatchEvent(new CustomEvent("projectPosted", { detail: project }));
       setPublishedTitle(projectTitle);
       setPublished(true);
-    } catch (err) {
-      toast.error("Failed to post project. Please try again.");
+      toast.success("Project published — now visible in Browse Projects.");
+    } catch {
+      const localProject = {
+        id: `posted-${Date.now()}`,
+        ...payload,
+        budget_type: "fixed",
+        created_date: new Date().toISOString(),
+      };
+      saveProject(localProject);
+      setPublishedTitle(projectTitle);
+      setPublished(true);
+      toast.success("Project published — now visible in Browse Projects.");
     } finally {
       setSubmitting(false);
     }
@@ -287,7 +682,7 @@ Write the project brief now:`;
             <Button onClick={() => navigate("/jobs")} className="flex-1 h-11 rounded-xl font-semibold">
               View All Projects
             </Button>
-            <Button variant="outline" onClick={() => { setPublished(false); setStep(0); setServiceType([]); setComplexity(""); setUrgency(""); setBiddingPeriod(""); setAnswers({ what: "", deadline: "", records: "", complications: "", company: "" }); setGeneratedBrief(""); setProjectTitle(""); }}
+            <Button variant="outline" onClick={() => { setPublished(false); setStep(0); setServiceType([]); setComplexity(""); setUrgency(""); setBiddingPeriod(""); setOpeningBudget(""); setAnswers({ what: "", deadline: "", records: "", complications: "", company: "" }); setGeneratedBrief(""); setProjectTitle(""); }}
               className="flex-1 h-11 rounded-xl">
               Post Another Project
             </Button>
@@ -298,7 +693,7 @@ Write the project brief now:`;
   }
 
   return (
-    <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10 sm:py-16">
+    <div className={`max-w-2xl mx-auto px-4 sm:px-6 py-10 sm:py-16 ${step === 4 ? "pb-36" : ""}`}>
       <Link to="/" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-8">
         <ArrowLeft className="h-4 w-4" /> Back
       </Link>
@@ -360,8 +755,15 @@ Write the project brief now:`;
             <MarketplaceIntelligence
               category={serviceType[0] || "other"}
               complexity={complexity || "medium"}
-              urgency={urgency || "flexible"}
-              budgetAmount={null}
+              urgency={urgency || "negotiable"}
+              biddingPeriod={biddingPeriod}
+              budgetAmount={openingBudgetAmount}
+              remote
+              missingRecords={projectConditions.missingRecords}
+              multipleIncomeSources={projectConditions.multipleIncomeSources}
+              internationalTaxIssues={projectConditions.internationalTaxIssues}
+              estimatedWorkload={estimatedWorkload}
+              deadlinePressure={deadlinePressure}
               descriptionLength={answers.what?.length || 0}
             />
 
@@ -391,9 +793,61 @@ Write the project brief now:`;
               </div>
             </div>
 
+            <div className="space-y-3 rounded-2xl border border-violet-200 bg-violet-50/60 p-4">
+              <div>
+                <Label className="text-sm font-semibold">Opening Budget</Label>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Set a visible starting point for professionals. Higher budgets usually attract more experienced bidders.
+                </p>
+              </div>
+
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-bold">£</span>
+                <Input
+                  type="number"
+                  min="1"
+                  inputMode="numeric"
+                  value={openingBudget}
+                  onChange={e => setOpeningBudget(e.target.value)}
+                  placeholder={`${Math.round(budgetRange.min)}`}
+                  className="pl-7 h-11 rounded-xl font-semibold"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {budgetSuggestions.map((suggestion) => (
+                  <button
+                    key={suggestion.label}
+                    type="button"
+                    onClick={() => setOpeningBudget(String(suggestion.value))}
+                    className={`px-3 py-2.5 rounded-xl border text-sm font-semibold transition-all text-left ${
+                      openingBudgetAmount === suggestion.value
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-violet-200 bg-white text-foreground hover:border-primary/40"
+                    }`}
+                  >
+                    {suggestion.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className={`rounded-xl border px-3 py-2 text-xs ${
+                selectedBudgetScore.budgetHealthLevel === "good"
+                  ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                  : selectedBudgetScore.budgetHealthLevel === "danger"
+                    ? "bg-rose-50 border-rose-200 text-rose-700"
+                    : "bg-amber-50 border-amber-200 text-amber-700"
+              }`}>
+                <p className="font-bold">{openingBudgetAmount ? selectedBudgetScore.budgetHealthLabel : `Suggested range: ${formatBudget(budgetRange.min)}-${formatBudget(budgetRange.max)}`}</p>
+                <p className="mt-0.5">
+                  {selectedBudgetScore.budgetSuggestion || "Urgent or specialist projects usually need a stronger starting budget to attract senior professionals."}
+                </p>
+              </div>
+            </div>
+
             <div className="flex gap-3">
               <Button variant="outline" onClick={() => setStep(0)} className="flex-1 h-11 rounded-xl">Back</Button>
-              <Button onClick={() => setStep(2)} disabled={!complexity || !urgency || !biddingPeriod} className="flex-1 h-11 rounded-xl font-semibold gap-2">
+              <Button onClick={() => setStep(2)} disabled={!complexity || !urgency || !biddingPeriod || !openingBudgetAmount} className="flex-1 h-11 rounded-xl font-semibold gap-2">
                 Continue <ArrowRight className="h-4 w-4" />
               </Button>
             </div>
@@ -424,8 +878,8 @@ Write the project brief now:`;
 
             <div className="flex gap-3">
               <Button variant="outline" onClick={() => setStep(1)} className="flex-1 h-11 rounded-xl">Back</Button>
-              <Button onClick={() => { setStep(3); generateBrief(); }} disabled={!answers.what.trim()} className="flex-1 h-11 rounded-xl font-semibold gap-2">
-                <Sparkles className="h-4 w-4" /> Generate Brief
+              <Button onClick={() => generateBrief()} disabled={generating || !answers.what.trim()} className="flex-1 h-11 rounded-xl font-semibold gap-2">
+                {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Generate Brief
               </Button>
             </div>
           </motion.div>
@@ -438,8 +892,8 @@ Write the project brief now:`;
               <Sparkles className="h-10 w-10 text-violet-500" />
             </motion.div>
             <div>
-              <p className="text-lg font-bold text-foreground">Generating your project brief…</p>
-              <p className="text-sm text-muted-foreground mt-1">Our AI is writing a professional description based on your answers.</p>
+              <p className="text-lg font-bold text-foreground">{generatedBrief ? "Refreshing your project brief…" : "Generating your project brief…"}</p>
+              <p className="text-sm text-muted-foreground mt-1">Drafting a polished UK accounting and tax engagement brief from your answers.</p>
             </div>
           </motion.div>
         )}
@@ -447,43 +901,53 @@ Write the project brief now:`;
         {/* Step 4 — Review & edit */}
         {step === 4 && (
           <motion.div key="s4" initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -12 }} className="space-y-5">
+            <form onSubmit={handleSubmit} className="space-y-5">
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-bold text-foreground">Review your project brief</h2>
                 <p className="text-sm text-muted-foreground mt-0.5">Edit anything you'd like to change before publishing.</p>
               </div>
-              <Button variant="outline" size="sm" className="gap-1.5 rounded-lg shrink-0"
-                onClick={() => { setStep(3); generateBrief(); }}>
-                <RefreshCw className="h-3.5 w-3.5" /> Regenerate
+              <Button type="button" variant="outline" size="sm" className="gap-1.5 rounded-lg shrink-0"
+                onClick={() => generateBrief({ regenerate: true })}
+                disabled={generating}
+              >
+                {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                {generating ? "Regenerating" : "Regenerate"}
               </Button>
             </div>
 
             <div className="space-y-1.5">
               <Label className="text-sm font-semibold">Project title</Label>
-              <Input value={projectTitle} onChange={e => setProjectTitle(e.target.value)} className="font-semibold" />
+              <Input value={projectTitle} onChange={e => setProjectTitle(e.target.value)} className="font-semibold" required />
             </div>
 
             <div className="space-y-1.5">
               <Label className="text-sm font-semibold">Project description</Label>
               <Textarea value={generatedBrief} onChange={e => setGeneratedBrief(e.target.value)}
-                className="h-52 resize-none text-sm leading-relaxed" />
+                className="h-52 resize-none text-sm leading-relaxed" required />
             </div>
 
             <div className="rounded-xl border border-border bg-secondary/30 px-4 py-3 text-xs text-muted-foreground space-y-1">
               <p className="font-semibold text-foreground">Summary</p>
-              <p>{serviceType.map(v => SERVICE_TYPES.find(s => s.value === v)?.label ?? v).join(", ")} · {complexity} complexity · {urgency.replace("_", " ")}</p>
-              <p className="text-emerald-600 font-medium">✓ Remote only · Bidding open for {biddingPeriod}</p>
+              <p>{serviceType.map(v => SERVICE_TYPES.find(s => s.value === v)?.label ?? v).join(", ")} · {complexity} complexity · {getUrgencyLabel(urgency)}</p>
+              <p className="text-emerald-600 font-medium">✓ Remote only · Bidding open for {biddingPeriod} · Budget from {formatBudget(openingBudgetAmount || 0)}</p>
             </div>
 
-            <div className="flex gap-3">
-              <Button variant="outline" onClick={() => setStep(2)} className="flex-1 h-11 rounded-xl">Back</Button>
-              <Button onClick={handleSubmit} disabled={submitting || !projectTitle.trim() || !generatedBrief.trim()}
-                className="flex-1 h-12 rounded-xl font-semibold gap-2">
-                {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                Publish Project Free
-              </Button>
+            <div className="sticky bottom-0 z-40 -mx-4 sm:-mx-6 px-4 sm:px-6 py-4 bg-background/95 backdrop-blur-md border-t border-border/60 space-y-2">
+              <div className="flex gap-3">
+                <Button type="button" variant="outline" onClick={() => setStep(2)} className="flex-1 h-11 rounded-xl">Back</Button>
+                <Button
+                  type="submit"
+                  disabled={submitting || !projectTitle.trim() || !generatedBrief.trim()}
+                  className="relative z-50 flex-1 h-12 rounded-xl font-semibold gap-2"
+                >
+                  {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  Publish Project Free
+                </Button>
+              </div>
+              <p className="text-center text-xs text-muted-foreground">Your project goes live immediately. Verified professionals will start bidding.</p>
             </div>
-            <p className="text-center text-xs text-muted-foreground">Your project goes live immediately. Verified professionals will start bidding.</p>
+            </form>
           </motion.div>
         )}
 

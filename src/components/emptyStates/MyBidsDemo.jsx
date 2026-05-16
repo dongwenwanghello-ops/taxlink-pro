@@ -5,6 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { Gavel, ArrowRight, Clock, Users, TrendingUp, Sparkles, Zap, Star, CheckCircle2, AlertCircle, Flame, Eye, TrendingDown, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { base44 } from "@/api/base44Client";
+import { getAllBids } from "@/lib/bidStore";
+import { computeBidCompetitiveness } from "@/lib/winProbabilityEngine";
 import DemoBidDetailModal from "@/components/demo/DemoBidDetailModal";
 import CountdownBadge from "@/components/shared/CountdownBadge.jsx";
 
@@ -93,9 +95,60 @@ const DEMO_BIDS_FALLBACK = [
   },
 ];
 
+function getCompetitivenessColors(tone, statusBg) {
+  if (tone === "high" || tone === "strong") return { bg: "bg-emerald-50 border-emerald-200", text: "text-emerald-700" };
+  if (tone === "competitive") return { bg: "bg-blue-50 border-blue-200", text: "text-blue-700" };
+  if (tone === "watch") return { bg: "bg-amber-50 border-amber-200", text: "text-amber-700" };
+  if (tone === "low") return { bg: "bg-rose-50 border-rose-200", text: "text-rose-700" };
+  return { bg: statusBg, text: "text-amber-600" };
+}
+
+function enrichBidWithCompetitiveness(bid, status, options = {}) {
+  const competingBids = options.competingBids ?? bid.competing_bids ?? Math.max(1, options.index + 2);
+  const clientTrustScore = bid.client_trust_score ?? bid.clientTrustScore ?? 0.86;
+  const result = computeBidCompetitiveness({
+    amount: bid.amount,
+    budgetAmount: bid.budget_amount || bid.starting_bid || Math.round(Number(bid.amount || 0) * 1.12),
+    proposal: bid.proposal || "",
+    timeline: bid.timeline,
+    bidCount: competingBids,
+    urgency: bid.urgency || "standard",
+    category: bid.project_category || bid.category || "other",
+    complexity: bid.complexity || "medium",
+    qualifications: bid.qualifications || bid.bidder_quals || bid.professional_credentials?.qualifications || [],
+    rating: bid.bidder_rating || bid.rating || 0,
+    completedJobs: bid.completed_jobs || bid.completedJobs || 0,
+    yearsExperience: bid.years_experience || bid.experience_label || bid.professional_credentials?.years_experience,
+    onTimeCompletionRate: bid.on_time_completion_rate || bid.onTimeCompletionRate || 0.8,
+    clientTrustScore,
+    submittedAt: bid.created_date,
+    projectCreatedAt: bid.project_created_date,
+  });
+  const colors = getCompetitivenessColors(result?.probabilityRange?.tone, status.bg);
+  const topInsight = result?.insights?.[0]?.text || "Your bid is under review by the client.";
+
+  return {
+    win_probability: result?.displayRange || "30-45%",
+    win_label: result?.label || "Outside chance",
+    win_analysis: result?.summary || "Outcome depends on client comparison and proposal fit.",
+    winColor: colors.bg,
+    winIconColor: colors.text,
+    competing_bids: competingBids,
+    client_rating: `${Math.round(clientTrustScore * 100)}%`,
+    market_floor: Math.max(Number(bid.amount || 0) * 0.78, 200),
+    market_avg: result?.market?.marketAverage || Number(bid.amount || 0),
+    market_high: Number(bid.amount || 0) * 1.3,
+    marketPercentile: result ? Math.round(result.score) : 45,
+    marketPositionColor: colors.text,
+    marketPositionLabel: result?.label ? `${result.label} (${result.displayRange})` : "Competitiveness estimated",
+    ai_insight: topInsight,
+  };
+}
+
 function DemoBidCard({ bid, onClick, isNewlySubmitted }) {
-  const isShortlisted = bid.id === "shortlisted";
-  const isRejected = bid.id === "rejected";
+  const isAccepted = bid.status === "accepted" || bid.statusLabel === "Accepted";
+  const isShortlisted = bid.status === "shortlisted" || bid.id === "shortlisted";
+  const isRejected = bid.status === "rejected" || bid.id === "rejected";
   const isClosed = isRejected || (bid.bidding_deadline && new Date(bid.bidding_deadline) < new Date());
   
   return (
@@ -136,6 +189,9 @@ function DemoBidCard({ bid, onClick, isNewlySubmitted }) {
             </Badge>
           </div>
           <h4 className="font-semibold text-foreground truncate text-sm">{bid.project_title}</h4>
+          {bid.bidder_headline && (
+            <p className="text-xs text-muted-foreground mt-0.5 truncate">{bid.bidder_headline}</p>
+          )}
           <p className="text-xs text-muted-foreground mt-0.5">
             {bid.id.startsWith("new_") ? `Just submitted now` :
              bid.id === "pending" ? "Submitted 2 hours ago" : 
@@ -153,15 +209,40 @@ function DemoBidCard({ bid, onClick, isNewlySubmitted }) {
       <div className={`rounded-xl p-3 mb-3 flex items-center justify-between ${bid.winColor} border`}>
         <div className="flex items-center gap-2">
           <Zap className={`h-4 w-4 ${bid.winIconColor}`} />
-          <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Win Probability</p>
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Bid Competitiveness</p>
+            {bid.win_label && <p className={`text-xs font-bold ${bid.winIconColor}`}>{bid.win_label}</p>}
+          </div>
         </div>
-        <p className={`text-2xl font-extrabold ${bid.winIconColor}`}>{bid.win_probability}%</p>
+        <p className={`text-xl font-extrabold ${bid.winIconColor}`}>
+          {typeof bid.win_probability === "number" ? `${bid.win_probability}%` : bid.win_probability}
+        </p>
       </div>
+
+      {(bid.qualifications?.length > 0 || bid.years_experience || bid.bidder_specialisms?.length > 0) && (
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {bid.qualifications?.slice(0, 4).map((qualification) => (
+            <span key={qualification} className="px-2 py-0.5 rounded-full bg-primary/8 text-primary border border-primary/15 text-[10px] font-bold">
+              {qualification}
+            </span>
+          ))}
+          {bid.years_experience && (
+            <span className="px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-200 text-[10px] font-bold">
+              {bid.years_experience}
+            </span>
+          )}
+          {bid.bidder_specialisms?.slice(0, 2).map((specialism) => (
+            <span key={specialism} className="px-2 py-0.5 rounded-full bg-secondary text-muted-foreground border border-border text-[10px] font-bold">
+              {specialism}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Bidding Deadline — larger and clearer */}
       {bid.bidding_deadline && !isClosed && (
         <div className="mb-3">
-          <CountdownBadge deadline={bid.bidding_deadline} compact={false} />
+          <CountdownBadge deadline={bid.bidding_deadline} startDate={bid.created_date} compact={false} />
         </div>
       )}
 
@@ -215,10 +296,22 @@ function DemoBidCard({ bid, onClick, isNewlySubmitted }) {
       )}
 
       {/* Status Badge */}
+      {isAccepted && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 mb-3 flex items-center gap-1.5 text-xs text-emerald-700 font-bold">
+          <CheckCircle2 className="h-3.5 w-3.5" />
+          Congratulations — your proposal has been selected by the client.
+        </motion.div>
+      )}
       {isShortlisted && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="rounded-lg bg-violet-50 border border-violet-200 px-3 py-2 mb-3 flex items-center gap-1.5 text-xs text-violet-700 font-bold">
           <Star className="h-3.5 w-3.5 fill-violet-400" />
           You've been shortlisted!
+        </motion.div>
+      )}
+      {isRejected && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 mb-3 flex items-center gap-1.5 text-xs text-rose-700 font-bold">
+          <AlertCircle className="h-3.5 w-3.5" />
+          Project awarded to another professional.
         </motion.div>
       )}
 
@@ -245,10 +338,16 @@ export default function MyBidsDemo() {
         setLoading(true);
         // Load real bids from database, sorted newest first
         const dbBids = await base44.entities.Bid.list("-created_date", 100);
+        const localBids = getAllBids();
+        const dbIds = new Set((dbBids || []).map((bid) => bid.id));
+        const allBids = [
+          ...(dbBids || []),
+          ...localBids.filter((bid) => !dbIds.has(bid.id)),
+        ].sort((a, b) => new Date(b.created_date || 0) - new Date(a.created_date || 0));
         
-        if (dbBids && dbBids.length > 0) {
+        if (allBids.length > 0) {
           // Format bids with pricing data
-          const formattedBids = dbBids.map(bid => {
+          const formattedBids = allBids.map(bid => {
             const isClosed = bid.bidding_deadline && new Date(bid.bidding_deadline) < new Date();
             const statusMap = {
               pending: { label: "Pending Review", color: "text-amber-700", bg: "bg-amber-50 border-amber-200", winColor: "text-amber-600" },
@@ -257,34 +356,36 @@ export default function MyBidsDemo() {
               rejected: { label: "Not Selected", color: "text-rose-700", bg: "bg-rose-50 border-rose-200", winColor: "text-rose-600" },
             };
             const status = statusMap[bid.status] || statusMap.pending;
+            const accepted = bid.status === "accepted";
+            const rejected = bid.status === "rejected";
             
+            const competitiveness = enrichBidWithCompetitiveness(bid, status, { index: allBids.indexOf(bid) });
+
             return {
               id: bid.id,
+              project_id: bid.project_id,
+              status: bid.status,
               project_title: bid.project_title,
               amount: bid.amount,
               timeline_label: bid.timeline_label,
               proposal: bid.proposal,
               bidder_name: bid.bidder_name,
+              bidder_headline: bid.bidder_headline || bid.professional_credentials?.headline,
+              bidder_specialisms: bid.bidder_specialisms || bid.professional_credentials?.specialisations || [],
+              qualifications: bid.qualifications || bid.bidder_quals || bid.professional_credentials?.qualifications || [],
+              years_experience: bid.years_experience || bid.experience_label || bid.professional_credentials?.years_experience,
               statusLabel: status.label,
               statusColor: status.color,
-              win_probability: Math.random() * 40 + 50, // 50-90%
-              win_analysis: "Your bid is under review by the client.",
-              winColor: `${status.bg}`,
-              winIconColor: status.winColor,
-              competing_bids: Math.floor(Math.random() * 4) + 2,
-              client_rating: 4 + Math.random(),
-              market_floor: Math.max(bid.amount * 0.7, 200),
-              market_avg: bid.amount,
-              market_high: bid.amount * 1.4,
-              marketPercentile: Math.floor(Math.random() * 50) + 30,
-              marketPositionColor: "text-emerald-700",
-              marketPositionLabel: "✓ Competitive position",
-              ai_insight: "Your proposal is visible to the project owner and under review.",
+              ...competitiveness,
               project_description: bid.project_title,
               client_deadline: "4 weeks",
               bidding_deadline: bid.bidding_deadline,
-              activity: isClosed ? "Bidding closed" : "Your bid is live and visible to client",
-              activity_icon: isClosed ? "closed" : "trending",
+              activity: accepted
+                ? "Congratulations — your proposal has been selected by the client."
+                : rejected
+                  ? "Project awarded to another professional"
+                  : isClosed ? "Bidding closed" : "Your bid is live and visible to client",
+              activity_icon: accepted ? "trending" : (rejected || isClosed) ? "closed" : "trending",
             };
           });
           
@@ -295,8 +396,37 @@ export default function MyBidsDemo() {
         }
       } catch (error) {
         console.error("Failed to load bids:", error);
-        // Fall back to demo data on error
-        setBids(DEMO_BIDS_FALLBACK);
+        const localBids = getAllBids();
+        if (localBids.length > 0) {
+          setBids(localBids.map((bid, index) => {
+            const status = { bg: "bg-amber-50 border-amber-200" };
+            const competitiveness = enrichBidWithCompetitiveness(bid, status, { index });
+            return {
+              id: bid.id,
+              project_id: bid.project_id,
+              status: bid.status,
+              project_title: bid.project_title,
+              amount: bid.amount,
+              timeline_label: bid.timeline_label,
+              proposal: bid.proposal,
+              bidder_name: bid.bidder_name,
+              bidder_headline: bid.bidder_headline || bid.professional_credentials?.headline,
+              bidder_specialisms: bid.bidder_specialisms || bid.professional_credentials?.specialisations || [],
+              qualifications: bid.qualifications || bid.bidder_quals || bid.professional_credentials?.qualifications || [],
+              years_experience: bid.years_experience || bid.experience_label || bid.professional_credentials?.years_experience,
+              statusLabel: "Pending Review",
+              statusColor: "text-amber-700",
+              ...competitiveness,
+              project_description: bid.project_title,
+              client_deadline: "4 weeks",
+              bidding_deadline: bid.bidding_deadline,
+              activity: "Your bid is live and visible to client",
+              activity_icon: "trending",
+            };
+          }));
+        } else {
+          setBids(DEMO_BIDS_FALLBACK);
+        }
       } finally {
         setLoading(false);
       }
@@ -309,30 +439,26 @@ export default function MyBidsDemo() {
   useEffect(() => {
     const handleBidSubmitted = (event) => {
       const newBid = event.detail;
+      const status = { bg: "bg-emerald-50 border-emerald-200" };
+      const competitiveness = enrichBidWithCompetitiveness(newBid, status, { index: 0 });
       
       // Optimistically add the new bid to the top
       const formattedBid = {
         id: newBid.id,
+        project_id: newBid.project_id,
+        status: newBid.status || "pending",
         project_title: newBid.project_title,
         amount: newBid.amount,
         timeline_label: newBid.timeline_label,
         proposal: newBid.proposal,
         bidder_name: newBid.bidder_name,
+        bidder_headline: newBid.bidder_headline || newBid.professional_credentials?.headline,
+        bidder_specialisms: newBid.bidder_specialisms || newBid.professional_credentials?.specialisations || [],
+        qualifications: newBid.qualifications || newBid.bidder_quals || newBid.professional_credentials?.qualifications || [],
+        years_experience: newBid.years_experience || newBid.experience_label || newBid.professional_credentials?.years_experience,
         statusLabel: "Just Submitted",
         statusColor: "text-emerald-700",
-        win_probability: 58,
-        win_analysis: "Your bid is under review by the client.",
-        winColor: "bg-emerald-50 border-emerald-200",
-        winIconColor: "text-emerald-600",
-        competing_bids: 3,
-        client_rating: 4.5,
-        market_floor: 200,
-        market_avg: 320,
-        market_high: 450,
-        marketPercentile: 35,
-        marketPositionColor: "text-emerald-700",
-        marketPositionLabel: "✓ Bid submitted successfully",
-        ai_insight: "Your proposal has been submitted successfully and is visible to the project owner.",
+        ...competitiveness,
         project_description: newBid.project_title,
         client_deadline: "4 weeks",
         bidding_deadline: newBid.bidding_deadline,
@@ -352,7 +478,33 @@ export default function MyBidsDemo() {
     };
 
     window.addEventListener("bidSubmitted", handleBidSubmitted);
-    return () => window.removeEventListener("bidSubmitted", handleBidSubmitted);
+    const handleBidUpdated = (event) => {
+      const detail = event.detail || {};
+      const projectId = detail.projectId || detail.project?.id;
+      const winningBidId = detail.winningBidId || detail.bid?.id;
+      if (!projectId) return;
+      setBids((current) => current.map((bid) => {
+        if (bid.project_id !== projectId) return bid;
+        const accepted = bid.id === winningBidId;
+        return {
+          ...bid,
+          status: accepted ? "accepted" : "rejected",
+          statusLabel: accepted ? "Accepted" : "Not Selected",
+          statusColor: accepted ? "text-emerald-700" : "text-rose-600",
+          activity: accepted
+            ? "Congratulations — your proposal has been selected by the client."
+            : "Project awarded to another professional",
+          activity_icon: accepted ? "trending" : "closed",
+        };
+      }));
+    };
+    window.addEventListener("bidUpdated", handleBidUpdated);
+    window.addEventListener("projectAwarded", handleBidUpdated);
+    return () => {
+      window.removeEventListener("bidSubmitted", handleBidSubmitted);
+      window.removeEventListener("bidUpdated", handleBidUpdated);
+      window.removeEventListener("projectAwarded", handleBidUpdated);
+    };
   }, []);
 
   if (loading) {

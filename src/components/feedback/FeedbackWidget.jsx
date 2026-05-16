@@ -47,7 +47,7 @@ export default function FeedbackWidget() {
   };
 
   return (
-    <div className="fixed bottom-5 right-5 z-[9999] flex flex-col items-end gap-2 pointer-events-none">
+    <motion.div className="fixed bottom-5 right-5 z-[60] flex flex-col items-end gap-2 pointer-events-none">
 
       {/* Panel */}
       <AnimatePresence>
@@ -154,6 +154,6 @@ export default function FeedbackWidget() {
         <span className="text-base leading-none">🛡</span>
         <span>{open ? "Close" : "Trust Pulse"}</span>
       </motion.button>
-    </div>
+    </motion.div>
   );
 }

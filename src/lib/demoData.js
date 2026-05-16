@@ -1,6 +1,10 @@
 // ── Static demo data for all pages ──────────────────────────────────────────
 // Used on Vercel/static deployments where the base44 backend is unavailable.
 
+const HOUR = 60 * 60 * 1000;
+const DAY = 24 * HOUR;
+const demoDeadline = (offsetMs) => new Date(Date.now() + offsetMs).toISOString();
+
 export const DEMO_PROFESSIONALS = [
   {
     id: "pro-1",
@@ -127,6 +131,7 @@ export const DEMO_JOBS = [
     status: "open",
     company_name: "Smith Consulting Ltd",
     created_date: new Date(Date.now() - 2 * 3600000).toISOString(),
+    bidding_deadline: demoDeadline(2 * DAY + 14 * HOUR),
   },
   {
     id: "job-2",
@@ -142,6 +147,7 @@ export const DEMO_JOBS = [
     status: "open",
     company_name: "BlueSky Retail Ltd",
     created_date: new Date(Date.now() - 5 * 3600000).toISOString(),
+    bidding_deadline: demoDeadline(5 * DAY),
   },
   {
     id: "job-3",
@@ -157,6 +163,7 @@ export const DEMO_JOBS = [
     status: "open",
     company_name: "Nexus Software Ltd",
     created_date: new Date(Date.now() - 8 * 3600000).toISOString(),
+    bidding_deadline: demoDeadline(18 * HOUR),
   },
   {
     id: "job-4",
@@ -172,6 +179,7 @@ export const DEMO_JOBS = [
     status: "open",
     company_name: "Meridian Health CIC",
     created_date: new Date(Date.now() - 12 * 3600000).toISOString(),
+    bidding_deadline: demoDeadline(12 * HOUR),
   },
   {
     id: "job-5",
@@ -187,6 +195,7 @@ export const DEMO_JOBS = [
     status: "open",
     company_name: "Harrington Partners LLP",
     created_date: new Date(Date.now() - 18 * 3600000).toISOString(),
+    bidding_deadline: demoDeadline(4 * HOUR),
   },
   {
     id: "job-6",
@@ -202,6 +211,7 @@ export const DEMO_JOBS = [
     status: "open",
     company_name: "Private Client",
     created_date: new Date(Date.now() - 24 * 3600000).toISOString(),
+    bidding_deadline: demoDeadline(90 * 60 * 1000),
   },
   {
     id: "job-7",
@@ -217,6 +227,7 @@ export const DEMO_JOBS = [
     status: "open",
     company_name: "Clearview Supplies Ltd",
     created_date: new Date(Date.now() - 30 * 3600000).toISOString(),
+    bidding_deadline: demoDeadline(-2 * HOUR),
   },
   {
     id: "job-8",
@@ -232,6 +243,7 @@ export const DEMO_JOBS = [
     status: "open",
     company_name: "BuildRight Contractors Ltd",
     created_date: new Date(Date.now() - 36 * 3600000).toISOString(),
+    bidding_deadline: demoDeadline(36 * HOUR),
   },
   {
     id: "job-9",
@@ -247,6 +259,7 @@ export const DEMO_JOBS = [
     status: "open",
     company_name: "Apex IT Consulting Ltd",
     created_date: new Date(Date.now() - 48 * 3600000).toISOString(),
+    bidding_deadline: demoDeadline(3 * HOUR),
   },
   {
     id: "job-10",
@@ -262,6 +275,7 @@ export const DEMO_JOBS = [
     status: "open",
     company_name: "Greenfield Landscaping",
     created_date: new Date(Date.now() - 60 * 3600000).toISOString(),
+    bidding_deadline: demoDeadline(72 * HOUR),
   },
 ];
 

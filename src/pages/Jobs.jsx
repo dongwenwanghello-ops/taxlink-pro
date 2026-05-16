@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { DEMO_JOBS } from "@/lib/demoData";
+import { getPostedProjects, mergeProjectSources, normalizeProject } from "@/lib/projectStore";
+import { getBiddingState } from "@/lib/biddingState";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +31,17 @@ const DURATIONS = [
   { value: "long_term", label: "Long-term" },
   { value: "ongoing", label: "Ongoing" },
 ];
+
+const URGENCY_LABELS = {
+  negotiable: "Negotiable",
+  flexible: "Negotiable",
+  standard: "Standard",
+  within_month: "Within 1 month",
+  within_2weeks: "Within 2 weeks",
+  within_week: "Within 1 week",
+  urgent: "Urgent",
+  asap: "ASAP",
+};
 
 const BUDGET_BANDS = [
   { label: "Any Budget",    min: 0,   max: Infinity },
@@ -95,6 +108,7 @@ export default function Jobs() {
   const [remoteOnly, setRemoteOnly] = useState(false);
   const [budgetBand, setBudgetBand] = useState(0);
   const [dbJobs, setDbJobs] = useState([]);
+  const [localJobs, setLocalJobs] = useState(() => getPostedProjects());
   const [isLoading, setIsLoading] = useState(true);
 
   const loadJobs = async () => {
@@ -110,17 +124,31 @@ export default function Jobs() {
 
   useEffect(() => {
     loadJobs();
-    const handler = () => loadJobs();
+    const handler = (event) => {
+      setLocalJobs(getPostedProjects());
+      const updatedProject = event.detail?.project || event.detail;
+      if (updatedProject?.id) {
+        setDbJobs((current) => [
+          normalizeProject(updatedProject),
+          ...current.filter((job) => job.id !== updatedProject.id),
+        ]);
+      }
+      loadJobs();
+    };
     window.addEventListener("projectPosted", handler);
-    return () => window.removeEventListener("projectPosted", handler);
+    window.addEventListener("projectUpdated", handler);
+    window.addEventListener("projectAwarded", handler);
+    return () => {
+      window.removeEventListener("projectPosted", handler);
+      window.removeEventListener("projectUpdated", handler);
+      window.removeEventListener("projectAwarded", handler);
+    };
   }, []);
 
-  // Merge: real DB jobs first, then demo jobs for any IDs not already in DB
-  const dbJobIds = new Set(dbJobs.map(j => j.id));
-  const jobs = [
-    ...dbJobs,
-    ...DEMO_JOBS.filter(j => !dbJobIds.has(j.id)),
-  ].sort((a, b) => {
+  // Merge persisted submissions before demo jobs so static demo data never hides real projects.
+  const jobs = mergeProjectSources(dbJobs, localJobs, DEMO_JOBS)
+    .filter((job) => getBiddingState(job).isOpen)
+    .sort((a, b) => {
     if (a._user_posted && !b._user_posted) return -1;
     if (!a._user_posted && b._user_posted) return 1;
     return new Date(b.created_date || 0) - new Date(a.created_date || 0);
@@ -130,7 +158,8 @@ export default function Jobs() {
     const matchesSearch = !search ||
       job.title?.toLowerCase().includes(search.toLowerCase()) ||
       job.description?.toLowerCase().includes(search.toLowerCase()) ||
-      job.company_name?.toLowerCase().includes(search.toLowerCase());
+      job.company_name?.toLowerCase().includes(search.toLowerCase()) ||
+      URGENCY_LABELS[job.urgency]?.toLowerCase().includes(search.toLowerCase());
     const matchesCategory = category === "all" || job.category === category;
     const matchesDuration = duration === "all" || job.duration === duration;
     const matchesRemote   = !remoteOnly || job.remote;
@@ -140,7 +169,7 @@ export default function Jobs() {
     return matchesSearch && matchesCategory && matchesDuration && matchesRemote && matchesBudget;
   });
 
-  const openJobs = jobs.filter((j) => j.status === "open").length;
+  const openJobs = jobs.filter((j) => getBiddingState(j).isOpen).length;
   const hasFilters = search || category !== "all" || duration !== "all" || remoteOnly || budgetBand !== 0;
 
   return (

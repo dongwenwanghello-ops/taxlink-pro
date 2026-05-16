@@ -62,9 +62,9 @@ export default function Navbar() {
 
         {/* Desktop CTAs */}
         <div className="hidden md:flex items-center gap-2.5">
-          <Link to="/create-profile" onClick={() => { base44.analytics.track({ eventName: "nav_cta_clicked", properties: { cta: "join_as_expert" } }); trackCTAClick("Join Free", "/create-profile"); }}>
+          <Link to="/create-profile" onClick={() => { base44.analytics.track({ eventName: "nav_cta_clicked", properties: { cta: "early_access" } }); trackCTAClick("Join Early Access", "/create-profile"); }}>
             <Button size="sm" variant="outline" className="font-bold rounded-lg h-9">
-              Join Free
+              Join Early Access
             </Button>
           </Link>
           <Link to="/post-job" onClick={() => { base44.analytics.track({ eventName: "nav_cta_clicked", properties: { cta: "post_project" } }); trackCTAClick("Post a Project Free", "/post-job"); }}>
@@ -109,7 +109,7 @@ export default function Navbar() {
               ))}
               <div className="border-t my-4" />
               <Link to="/create-profile" onClick={() => setOpen(false)}>
-                <Button variant="outline" className="w-full mb-2 rounded-lg font-bold">Join Free — Start Bidding</Button>
+                <Button variant="outline" className="w-full mb-2 rounded-lg font-bold">Join Early Access</Button>
               </Link>
               <Link to="/post-job" onClick={() => setOpen(false)}>
                 <Button className="w-full rounded-lg font-bold">⚡ Post a Project Free</Button>

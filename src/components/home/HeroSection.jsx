@@ -171,12 +171,12 @@ export default function HeroSection() {
             >
               <CTAButton
                 to="/create-profile"
-                label="JOIN FREE & START BIDDING"
-                sub="For ACA · ACCA · CTA professionals"
+                label="GET EARLY ACCESS"
+                sub="Notify me about UK tax projects"
                 primary
                 onClick={() => {
-                  base44.analytics.track({ eventName: "hero_cta_clicked", properties: { cta: "join_free" } });
-                  trackCTAClick("JOIN FREE", "/create-profile");
+                  base44.analytics.track({ eventName: "hero_cta_clicked", properties: { cta: "early_access" } });
+                  trackCTAClick("GET EARLY ACCESS", "/create-profile");
                 }}
               />
               <CTAButton

@@ -1,24 +1,12 @@
 import React from "react";
 import { Sparkles, TrendingUp, Clock, ShieldCheck } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { FAIR_MARKET_PRICES, computeFairMarketRange } from "@/lib/marketplaceIntelligence";
 
 // Base pricing per service (min, max) in GBP
-const SERVICE_BASE_PRICES = {
-  self_assessment:   { min: 80,  max: 250,  label: "Self Assessment",    level: 2 },
-  vat_return:        { min: 120, max: 350,  label: "VAT Return",         level: 3 },
-  corporation_tax:   { min: 300, max: 900,  label: "Corporation Tax",    level: 4 },
-  rd_claim:          { min: 500, max: 2000, label: "R&D Tax Claim",      level: 5 },
-  payroll:           { min: 80,  max: 300,  label: "Payroll",            level: 2 },
-  bookkeeping:       { min: 150, max: 500,  label: "Bookkeeping",        level: 2 },
-  tax_investigation: { min: 400, max: 1500, label: "Tax Investigation",  level: 5 },
-  capital_gains:     { min: 200, max: 600,  label: "Capital Gains",      level: 4 },
-  inheritance_tax:   { min: 300, max: 900,  label: "Inheritance Tax",    level: 5 },
-  other:             { min: 150, max: 600,  label: "Advisory",           level: 3 },
-};
+const SERVICE_BASE_PRICES = FAIR_MARKET_PRICES;
 
 // Multipliers
-const COMPLEXITY_MULTIPLIER = { simple: 0.8, medium: 1.0, complex: 1.4 };
-const URGENCY_MULTIPLIER    = { flexible: 0.95, within_month: 1.0, urgent: 1.25 };
 const RECORDS_READY_DISCOUNT = 0.9; // 10% off if records are ready
 
 // Professional levels by max level value
@@ -56,15 +44,17 @@ function round50(n) {
 export function computeEstimate(services, complexity, urgency, recordsReady) {
   if (!services.length || !complexity || !urgency) return null;
 
-  const cm = COMPLEXITY_MULTIPLIER[complexity] ?? 1;
-  const um = URGENCY_MULTIPLIER[urgency] ?? 1;
   const rm = recordsReady ? RECORDS_READY_DISCOUNT : 1;
 
   const lines = services.map(svc => {
     const base = SERVICE_BASE_PRICES[svc];
     if (!base) return null;
-    const min = Math.max(50, round50(base.min * cm * um * rm));
-    const max = Math.max(50, round50(base.max * cm * um * rm));
+    const marketRange = computeFairMarketRange(svc, complexity, urgency, {
+      missingRecords: !recordsReady,
+      remote: true,
+    });
+    const min = Math.max(50, round50(marketRange.min * rm));
+    const max = Math.max(50, round50(marketRange.max * rm));
     return { svc, label: base.label, min, max, level: base.level };
   }).filter(Boolean);
 

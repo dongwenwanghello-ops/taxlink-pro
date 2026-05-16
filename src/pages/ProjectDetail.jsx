@@ -10,12 +10,18 @@ import { formatDistanceToNow } from "date-fns";
 import { motion } from "framer-motion";
 import { DEMO_JOBS } from "@/lib/demoData";
 import { base44 } from "@/api/base44Client";
-import { computeWinProbability } from "@/lib/winProbabilityEngine";
+import { getBidsForProject } from "@/lib/bidStore";
+import { getPostedProjects } from "@/lib/projectStore";
+import { computeBidCompetitiveness } from "@/lib/winProbabilityEngine";
 import BidModal from "@/components/shared/BidModal.jsx";
 import CountdownBadge from "@/components/shared/CountdownBadge.jsx";
+import { useBiddingCountdown } from "@/hooks/useBiddingCountdown";
+import { resolveDeadline } from "@/lib/countdownUtils";
+import { cn } from "@/lib/utils";
 import MarketplaceIntelligence from "@/components/shared/MarketplaceIntelligence";
 import WinChanceBreakdown from "@/components/shared/WinChanceBreakdown.jsx";
 import OwnerProjectActions from "@/components/shared/OwnerProjectActions";
+import { scoreMarketplaceProject } from "@/lib/marketplaceIntelligence";
 
 const categoryLabels = {
   tax_return: "Tax Return", bookkeeping: "Bookkeeping", payroll: "Payroll",
@@ -50,8 +56,17 @@ const complexityColors = {
 };
 
 const urgencyLabels = {
-  flexible: "Flexible timeline", within_month: "Within a month", urgent: "Urgent — within a week",
+  negotiable: "Negotiable",
+  flexible: "Negotiable",
+  standard: "Standard",
+  within_month: "Within a month",
+  within_2weeks: "Within 2 weeks",
+  within_week: "Within 1 week",
+  urgent: "Urgent",
+  asap: "ASAP",
 };
+
+const formatCurrency = (value) => `£${Math.round(value).toLocaleString()}`;
 
 function seeded(id = "", offset = 0) {
   return id.split("").reduce((a, c) => a + c.charCodeAt(0), 0) + offset;
@@ -113,23 +128,48 @@ export default function ProjectDetail() {
   const clientRating = job ? (4.5 + ((seeded(job.id, 7) % 6) / 10)).toFixed(1) : 4.5;
   const paymentRate = job ? 90 + (seeded(job.id, 13) % 10) : 90;
 
-  const winChance = useMemo(() => {
-    if (!job) return 0;
-    return computeWinProbability({
-      bidAmount: job.budget_amount || 300,
-      budgetAmount: job.budget_amount,
+  const { isClosed: biddingClosed, isOpen: biddingOpen, hasDeadline } = useBiddingCountdown(job, {
+    startDate: job?.created_date,
+    biddingPeriod: job?.bidding_period,
+  });
+  const deadline = resolveDeadline(job);
+
+  const marketplaceScore = useMemo(() => {
+    if (!job) return null;
+    return scoreMarketplaceProject({
       category: job.category,
       complexity: job.complexity || "medium",
-      urgency: job.urgency || "flexible",
-      bidCount,
-      clientPaymentRate: paymentRate,
-      userRating: parseFloat(clientRating),
-      userCompletedJobs: 8 + seeded(job.id, 17) % 12,
-      responseSpeed: 75,
-      projectViewers: 2 + (seeded(job.id, 5) % 7),
-      hoursUntilDeadline: closingHours,
+      urgency: job.urgency || "negotiable",
+      biddingPeriod: job.bidding_period,
+      biddingDeadline: job.bidding_deadline,
+      budgetAmount: job.budget_amount,
+      remote: job.remote,
+      missingRecords: job.missing_records,
+      multipleIncomeSources: job.multiple_income_sources,
+      internationalTaxIssues: job.international_tax_issues,
+      estimatedWorkload: job.estimated_workload,
+      deadlinePressure: job.deadline_pressure,
+      descriptionLength: job.description?.length || 0,
     });
-  }, [job, bidCount, paymentRate, clientRating, closingHours]);
+  }, [job]);
+
+  const winChance = useMemo(() => {
+    if (!job) return null;
+    return computeBidCompetitiveness({
+      amount: job.budget_amount || marketplaceScore?.recommendedBudgetRange?.min || 300,
+      budgetAmount: job.budget_amount,
+      proposal: job.description || "",
+      timeline: job.urgency === "asap" ? "24h" : job.urgency === "urgent" ? "3d" : "1w",
+      category: job.category,
+      complexity: job.complexity || "medium",
+      urgency: job.urgency || "negotiable",
+      bidCount,
+      clientTrustScore: paymentRate / 100,
+      rating: parseFloat(clientRating),
+      completedJobs: 8 + seeded(job.id, 17) % 12,
+      responseSpeed: 75,
+    });
+  }, [job, bidCount, paymentRate, clientRating, closingHours, marketplaceScore]);
 
   // Load current user for ownership check
   useEffect(() => {
@@ -148,6 +188,12 @@ export default function ProjectDetail() {
         setLoading(false);
         return;
       }
+      const localJob = getPostedProjects().find(j => j.id === id);
+      if (localJob) {
+        setJob(localJob);
+        setLoading(false);
+        return;
+      }
       // Try fetching from the entity database by ID
       try {
         const result = await base44.entities.JobPost.get(id);
@@ -162,6 +208,21 @@ export default function ProjectDetail() {
     loadJob();
   }, [id]);
 
+  useEffect(() => {
+    const handleProjectUpdated = (event) => {
+      const updated = event.detail?.project || event.detail;
+      if (updated?.id === id) {
+        setJob((current) => current ? { ...current, ...updated } : updated);
+      }
+    };
+    window.addEventListener("projectUpdated", handleProjectUpdated);
+    window.addEventListener("projectAwarded", handleProjectUpdated);
+    return () => {
+      window.removeEventListener("projectUpdated", handleProjectUpdated);
+      window.removeEventListener("projectAwarded", handleProjectUpdated);
+    };
+  }, [id]);
+
   // Bid count — fetch real bids from DB
   useEffect(() => {
     if (!job) return;
@@ -169,16 +230,24 @@ export default function ProjectDetail() {
     const loadBidCount = async () => {
       try {
         const bids = await base44.entities.Bid.filter({ project_id: job.id });
-        setBidCount(bids.length);
+        const localBids = getBidsForProject(job.id);
+        const ids = new Set(bids.map((bid) => bid.id));
+        setBidCount(bids.length + localBids.filter((bid) => !ids.has(bid.id)).length);
       } catch {
-        setBidCount(0);
+        setBidCount(getBidsForProject(job.id).length);
       }
     };
 
     loadBidCount();
     const refresh = () => loadBidCount();
     window.addEventListener("bidSubmitted", refresh);
-    return () => window.removeEventListener("bidSubmitted", refresh);
+    window.addEventListener("bidUpdated", refresh);
+    window.addEventListener("projectAwarded", refresh);
+    return () => {
+      window.removeEventListener("bidSubmitted", refresh);
+      window.removeEventListener("bidUpdated", refresh);
+      window.removeEventListener("projectAwarded", refresh);
+    };
   }, [job?.id]);
 
   if (loading) return <LoadingSkeleton />;
@@ -211,6 +280,7 @@ export default function ProjectDetail() {
   const bidMin = job.budget_amount ? Math.round(job.budget_amount * 0.85) : null;
   const bidMax = job.budget_amount ? Math.round(job.budget_amount * (1 + bidCount * 0.07)) : null;
   const isOwner = currentUser && job.created_by && currentUser.email === job.created_by;
+  const estimatedBudgetRange = marketplaceScore?.recommendedBudgetRange;
 
   return (
     <div className="min-h-screen bg-background">
@@ -233,9 +303,19 @@ export default function ProjectDetail() {
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
               className="bg-card border border-border/70 rounded-2xl p-6">
               <div className="flex flex-wrap items-center gap-2 mb-4">
-                {job.status === "open" && (
+                {biddingOpen && (
                   <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />Open for bids
+                  </span>
+                )}
+                {!biddingOpen && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-600 text-xs font-semibold">
+                    {job.status === "in_progress" || job.lifecycle_state === "awarded" ? "Awarded / In Progress" : "Bidding closed"}
+                  </span>
+                )}
+                {(job.status === "in_progress" || job.lifecycle_state === "awarded") && job.awarded_bidder_name && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-violet-50 border border-violet-200 text-violet-700 text-xs font-semibold">
+                    Selected: {job.awarded_bidder_name}
                   </span>
                 )}
                 <Badge variant="outline" className={`text-xs ${catColor}`}>{catLabel}</Badge>
@@ -306,13 +386,17 @@ export default function ProjectDetail() {
             {/* Win Chance Breakdown — bidders only */}
             {!isOwner && <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.14 }}>
               <WinChanceBreakdown
-                percent={winChance}
-                priceScore={job.budget_amount ? Math.min(Math.max(300 / job.budget_amount, 0.5), 1.0) : 0.5}
-                competitionScore={Math.max(0, 1 - bidCount / 12)}
-                trustScore={paymentRate / 100}
-                reputationScore={parseFloat(clientRating) / 5}
-                demandScore={(2 + (seeded(job.id, 5) % 7)) / 10}
-                urgencyScore={job.urgency === "urgent" ? 0.9 : job.urgency === "within_month" ? 0.7 : 0.6}
+                percent={winChance?.score}
+                displayRange={winChance?.displayRange}
+                label={winChance?.label}
+                summary={winChance?.summary}
+                insights={winChance?.insights}
+                priceScore={(winChance?.factors?.price || 50) / 100}
+                competitionScore={(winChance?.factors?.competition || 50) / 100}
+                trustScore={(winChance?.factors?.clientTrust || 80) / 100}
+                reputationScore={(winChance?.factors?.reputation || 60) / 100}
+                demandScore={(marketplaceScore?.interestScore || 50) / 100}
+                urgencyScore={(winChance?.factors?.response || 60) / 100}
                 category={job.category}
                 bidCount={bidCount}
                 budgetAmount={job.budget_amount}
@@ -327,8 +411,16 @@ export default function ProjectDetail() {
               <MarketplaceIntelligence
                 category={job.category}
                 complexity={job.complexity || "medium"}
-                urgency={job.urgency || "flexible"}
+                urgency={job.urgency || "negotiable"}
+                biddingPeriod={job.bidding_period}
+                biddingDeadline={job.bidding_deadline}
                 budgetAmount={job.budget_amount}
+                remote={job.remote}
+                missingRecords={job.missing_records}
+                multipleIncomeSources={job.multiple_income_sources}
+                internationalTaxIssues={job.international_tax_issues}
+                estimatedWorkload={job.estimated_workload}
+                deadlinePressure={job.deadline_pressure}
                 descriptionLength={job.description?.length || 0}
                 compact={false}
               />
@@ -350,15 +442,30 @@ export default function ProjectDetail() {
                       <p className="text-3xl font-extrabold text-primary">£{job.budget_amount.toLocaleString()}</p>
                       <p className="text-xs text-muted-foreground">{job.budget_type === "hourly" ? "per hour" : "fixed price"}</p>
                     </div>
-                  ) : job.budget_range && (
+                  ) : job.budget_range ? (
                     <div>
                       <p className="text-xs text-muted-foreground font-semibold uppercase tracking-widest mb-1">Budget Range</p>
                       <p className="text-xl font-extrabold text-primary">{job.budget_range.replace(/_/g, " ").replace("over", "£").replace("under", "Under £").replace(/(\d+)_(\d+)/, "£$1–£$2")}</p>
                     </div>
+                  ) : estimatedBudgetRange && (
+                    <div>
+                      <p className="text-xs text-muted-foreground font-semibold uppercase tracking-widest mb-1">Estimated Budget</p>
+                      <p className="text-xl font-extrabold text-primary">{formatCurrency(estimatedBudgetRange.min)}-{formatCurrency(estimatedBudgetRange.max)}</p>
+                      <p className="text-xs text-muted-foreground">Based on complexity, urgency and expected workload</p>
+                    </div>
                   )}
-                  <Button onClick={() => setShowBidModal(true)}
-                    className="w-full h-11 rounded-xl font-semibold gap-2 bg-gradient-to-r from-violet-600 to-primary border-0">
-                    <Gavel className="h-4 w-4" />Submit Your Quote
+                  <Button
+                    disabled={biddingClosed}
+                    onClick={() => !biddingClosed && setShowBidModal(true)}
+                    className={cn(
+                      "w-full h-11 rounded-xl font-semibold gap-2 border-0",
+                      biddingClosed
+                        ? "bg-muted text-muted-foreground cursor-not-allowed"
+                        : "bg-gradient-to-r from-violet-600 to-primary",
+                    )}
+                  >
+                    <Gavel className="h-4 w-4" />
+                    {biddingClosed ? "Bidding Closed" : "Submit Your Quote"}
                   </Button>
                   <p className="text-xs text-muted-foreground text-center">No fees to bid · Remote work · Verified professionals only</p>
                 </div>
@@ -370,9 +477,14 @@ export default function ProjectDetail() {
               className="bg-card border border-border/70 rounded-2xl p-5 space-y-3">
               <h3 className="font-semibold text-foreground text-sm">Project Details</h3>
               <div className="space-y-2 text-sm">
-                {job.bidding_deadline && (
+                {hasDeadline && biddingOpen && (
                   <div className="flex items-center justify-between">
-                    <CountdownBadge deadline={job.bidding_deadline} compact={false} />
+                    <CountdownBadge
+                      deadline={deadline}
+                      startDate={job.created_date}
+                      biddingPeriod={job.bidding_period}
+                      showDeadlineHint
+                    />
                   </div>
                 )}
                 {job.duration && (
@@ -442,7 +554,7 @@ export default function ProjectDetail() {
           job={job}
           bidCount={bidCount}
           onClose={() => setShowBidModal(false)}
-          onBidSubmitted={() => setShowBidModal(false)}
+          onBidSubmitted={() => {}}
           onSubmitSuccess={() => navigate("/my-bids")}
         />
       )}

@@ -17,9 +17,9 @@ const paths = [
   {
     icon: Briefcase,
     tag: "For Professionals",
-    heading: "Earn side-income on your terms.",
-    body: "Browse remote, flexible tax projects that fit your schedule. Bid on work, build your reputation, and earn professional income around your existing commitments.",
-    cta: "Join as an Expert",
+    heading: "Get notified about matching UK tax projects.",
+    body: "Join early access with just your email and optional credentials. No password, CV upload, or full account setup while we validate marketplace demand.",
+    cta: "Get Early Access",
     to: "/create-profile",
     style: "bg-foreground text-background",
     btnStyle: "bg-white/10 border border-white/20 text-white hover:bg-white/20",

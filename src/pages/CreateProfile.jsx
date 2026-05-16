@@ -1,45 +1,94 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { base44 } from "@/api/base44Client";
-import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
-import { X, Loader2, ArrowLeft, ArrowRight, CheckCircle2, User, Briefcase, Star, Eye, EyeOff, Lock, ExternalLink } from "lucide-react";
+import { X, Loader2, ArrowLeft, CheckCircle2, Mail, Briefcase, Sparkles, Users, ShieldCheck } from "lucide-react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import AiBioGenerator from "@/components/createProfile/AiBioGenerator";
 
-const QUALIFICATIONS = ["ACA", "ACCA", "CTA", "ATT", "AAT", "CIMA", "CIPFA", "FCA", "FCCA"];
-const SOFTWARE = ["Xero", "QuickBooks", "Sage", "FreeAgent", "Kashflow", "IRIS", "TaxCalc", "CCH", "Dext", "AutoEntry", "Hubdoc", "Excel"];
+const ROLE_OPTIONS = [
+  { value: "professional", label: "Professional", desc: "Get notified about matching UK tax projects" },
+  { value: "client", label: "Client", desc: "Get early access when you need tax/accounting help" },
+];
+const QUALIFICATIONS = ["ACA", "ACCA", "CTA", "ATT", "AAT", "AATQB", "ICAEW", "ICAS", "CIMA", "CIPFA", "FCA", "FCCA"];
 const SPECIALISATIONS = [
-  "Self Assessment", "Corporation Tax", "VAT", "Payroll", "Bookkeeping",
+  "Self Assessment", "Corporation Tax", "VAT", "VAT Specialist", "Payroll", "Payroll Specialist", "Bookkeeping",
   "Audit", "Tax Planning", "R&D Tax Credits", "Capital Gains", "Inheritance Tax",
-  "Making Tax Digital", "Company Formation", "Annual Accounts", "Management Accounts",
+  "Property Tax", "Tax Adviser", "Making Tax Digital", "Company Formation", "Annual Accounts", "Management Accounts",
   "Crypto Tax", "Landlord Tax", "CIS Returns", "HMRC Investigations",
 ];
 
-const STEPS = [
-  { id: 1, label: "Basic info",   icon: User },
-  { id: 2, label: "Credentials", icon: Star },
-  { id: 3, label: "Bio & rate",  icon: Briefcase },
-];
+const CLIENT_TYPES = ["Individual", "Sole trader", "Limited company", "Landlord", "Startup", "Accounting practice", "Other"];
+const PROJECT_INTERESTS = ["Self Assessment", "VAT Return", "Corporation Tax", "Bookkeeping", "Payroll", "Capital Gains", "R&D Tax Credits", "HMRC Enquiry", "General Tax Advice"];
+const EARLY_ACCESS_KEY = "taxprouk_early_access_signups";
+
+function getStoredSignups() {
+  try {
+    const signups = JSON.parse(localStorage.getItem(EARLY_ACCESS_KEY) || "[]");
+    return Array.isArray(signups) ? signups : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveEarlyAccessSignup(signup) {
+  const saved = {
+    id: `early_${Date.now()}`,
+    signup_date: new Date().toISOString(),
+    signup_source: "create-profile-early-access",
+    ...signup,
+  };
+  const existing = getStoredSignups();
+  const next = [saved, ...existing.filter((item) => item.email?.toLowerCase() !== saved.email.toLowerCase())];
+  localStorage.setItem(EARLY_ACCESS_KEY, JSON.stringify(next));
+  localStorage.setItem("early_access_signup", JSON.stringify(saved));
+  window.dispatchEvent(new CustomEvent("earlyAccessSignup", { detail: saved }));
+  return saved;
+}
+
+function getDisplayName(fullName, preference = "full") {
+  const parts = String(fullName || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "";
+  if (preference === "first") return parts[0];
+  if (preference === "initial" && parts.length > 1) return `${parts[0]} ${parts[parts.length - 1][0]}.`;
+  return parts.join(" ");
+}
 
 export default function CreateProfile() {
-  const navigate = useNavigate();
-  const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [published, setPublished] = useState(false);
-  const [publishedProfile, setPublishedProfile] = useState(null);
+  const [bioGenerating, setBioGenerating] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [savedSignup, setSavedSignup] = useState(null);
   const [form, setForm] = useState({
-    full_name: "", title: "", bio: "", location: "",
-    hourly_rate: "", years_experience: "", linkedin_url: "",
-    remote_work: true, availability: "available", visibility: "public",
-    qualifications: [], specialisations: [], software_expertise: [],
+    email: "",
+    user_role: "professional",
+    full_name: "",
+    display_name_preference: "full",
+    profile_public: false,
+    visible_to_clients: true,
+    years_experience: "",
+    availability: "available",
+    qualifications: [],
+    specialisations: [],
+    client_type: "",
+    project_interests: [],
+    bio: "",
+    bio_notes: "",
   });
+
+  const aiBioForm = useMemo(() => ({
+    ...form,
+    title: "UK tax and accounting professional",
+    headline: "UK tax and accounting professional",
+    location: "UK",
+    remote_work: true,
+    software_expertise: [],
+  }), [form]);
 
   const toggleItem = (field, item) =>
     setForm((prev) => ({
@@ -51,39 +100,68 @@ export default function CreateProfile() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.full_name.trim() || !form.title.trim()) {
-      toast.error("Please fill in your name and title before publishing.");
+    if (!/^\S+@\S+\.\S+$/.test(form.email.trim())) {
+      toast.error("Please enter a valid email address.");
       return;
     }
-    if (form.qualifications.length === 0) {
-      toast.error("Please select at least one qualification.");
+    if (form.user_role === "professional" && form.full_name.trim().split(/\s+/).filter(Boolean).length < 2) {
+      toast.error("Please enter your real full name. You can control how it appears publicly.");
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const data = {
-        ...form,
-        hourly_rate: form.hourly_rate ? Number(form.hourly_rate) : undefined,
-        years_experience: form.years_experience ? Number(form.years_experience) : undefined,
+      const signup = {
+        email: form.email.trim(),
+        role: form.user_role,
+        full_name: form.user_role === "professional" ? form.full_name.trim() : "",
+        display_name_preference: form.user_role === "professional" ? "full" : "",
+        display_name: form.user_role === "professional" ? getDisplayName(form.full_name, "full") : "",
+        profile_public: form.user_role === "professional" ? form.profile_public : false,
+        visible_to_clients: form.user_role === "professional" ? form.visible_to_clients : false,
+        specialties: form.user_role === "professional" ? form.specialisations : form.project_interests,
+        qualifications: form.user_role === "professional" ? form.qualifications : [],
+        years_experience: form.user_role === "professional" ? form.years_experience : "",
+        availability: form.user_role === "professional" ? form.availability : "",
+        client_type: form.user_role === "client" ? form.client_type : "",
+        project_interests: form.user_role === "client" ? form.project_interests : [],
+        bio: form.user_role === "professional" ? form.bio.trim() : "",
+        signup_source: "early-access-onboarding",
       };
-      const response = await base44.functions.invoke("createProfile", data);
-      const profile = response?.data?.profile || data;
-      localStorage.setItem("my_profile", JSON.stringify(profile));
-      base44.analytics.track({ eventName: "publish_profile" });
-      setPublishedProfile(profile);
-      setPublished(true);
+      const saved = saveEarlyAccessSignup(signup);
+      localStorage.setItem("user_role", signup.role);
+
+      if (signup.role === "professional") {
+        localStorage.setItem("my_profile", JSON.stringify({
+          user_role: "professional",
+          email: signup.email,
+          full_name: signup.full_name,
+          display_name: signup.display_name,
+          display_name_preference: signup.display_name_preference,
+          profile_public: signup.profile_public,
+          visible_to_clients: signup.visible_to_clients,
+          qualifications: signup.qualifications,
+          specialisations: signup.specialties,
+          years_experience: signup.years_experience,
+          availability: signup.availability,
+          bio: signup.bio,
+          headline: signup.qualifications.length
+            ? `${signup.qualifications.slice(0, 2).join(" / ")} Tax Professional`
+            : "UK Tax & Accounting Professional",
+        }));
+      }
+
+      base44.analytics.track({ eventName: "early_access_signup", properties: { role: signup.role, source: signup.signup_source } });
+      setSavedSignup(saved);
+      setSubmitted(true);
     } catch (err) {
-      toast.error(err?.message || "Failed to publish profile. Please try again.");
+      toast.error(err?.message || "Could not save your early access request. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const canAdvanceStep1 = form.full_name.trim() && form.title.trim();
-  const canAdvanceStep2 = form.qualifications.length > 0;
-
-  if (published && publishedProfile) {
+  if (submitted && savedSignup) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center px-4">
         <div className="max-w-md w-full text-center space-y-6">
@@ -93,23 +171,30 @@ export default function CreateProfile() {
             </div>
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Your profile is now live!</h1>
+            <h1 className="text-2xl font-bold text-foreground">You're on the early access list</h1>
             <p className="text-muted-foreground mt-2 text-sm">
-              Clients can now find and contact you. You'll start receiving matched opportunities.
+              We'll notify you when the marketplace opens up for {savedSignup.role === "professional" ? "matching UK tax projects" : "new client project posting"}.
             </p>
           </div>
-          <div className="grid grid-cols-1 gap-3">
-            <Button className="w-full h-11 rounded-xl font-semibold gap-2" onClick={() => navigate("/my-profile")}>
-              <User className="h-4 w-4" /> Go to My Profile
-            </Button>
-            {publishedProfile.id && (
-              <Button variant="outline" className="w-full h-11 rounded-xl gap-2" onClick={() => navigate(`/professionals/${publishedProfile.id}`)}>
-                <ExternalLink className="h-4 w-4" /> View Public Profile
-              </Button>
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-left text-sm text-emerald-800">
+            <p className="font-semibold">Saved for MVP validation</p>
+            <p className="mt-1">Email: {savedSignup.email}</p>
+            <p>Role: {savedSignup.role === "professional" ? "Professional" : "Client"}</p>
+            {savedSignup.role === "professional" && savedSignup.display_name && (
+              <p>Public name: {savedSignup.display_name}</p>
             )}
-            <Button variant="ghost" className="w-full h-11 rounded-xl gap-2" onClick={() => navigate("/jobs")}>
-              <Briefcase className="h-4 w-4" /> Browse Projects
-            </Button>
+          </div>
+          <div className="grid grid-cols-1 gap-3">
+            <Link to="/jobs">
+              <Button className="w-full h-11 rounded-xl font-semibold gap-2">
+                <Briefcase className="h-4 w-4" /> Browse Projects
+              </Button>
+            </Link>
+            <Link to="/professionals">
+              <Button variant="outline" className="w-full h-11 rounded-xl gap-2">
+                <Users className="h-4 w-4" /> Browse Professionals
+              </Button>
+            </Link>
           </div>
         </div>
       </div>
@@ -125,257 +210,237 @@ export default function CreateProfile() {
             <ArrowLeft className="h-4 w-4" />
             Back
           </Link>
-          <div className="text-sm font-semibold text-muted-foreground">Step {step} of 3</div>
+          <div className="text-sm font-semibold text-muted-foreground">No password required</div>
         </div>
       </div>
 
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10">
-
-        {/* Step indicator */}
-        <div className="flex items-center gap-0 mb-10">
-          {STEPS.map((s, i) => (
-            <React.Fragment key={s.id}>
-              <button
-                onClick={() => s.id < step && setStep(s.id)}
-                className={`flex items-center gap-2 text-sm font-semibold transition-colors ${
-                  step === s.id ? "text-primary" : step > s.id ? "text-emerald-600 cursor-pointer" : "text-muted-foreground cursor-default"
-                }`}
-              >
-                <div className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-all ${
-                  step > s.id ? "bg-emerald-500 border-emerald-500 text-white" :
-                  step === s.id ? "bg-primary border-primary text-primary-foreground" :
-                  "border-border text-muted-foreground"
-                }`}>
-                  {step > s.id ? <CheckCircle2 className="h-4 w-4" /> : s.id}
-                </div>
-                <span className="hidden sm:block">{s.label}</span>
-              </button>
-              {i < STEPS.length - 1 && (
-                <div className={`flex-1 h-px mx-3 transition-colors ${step > s.id ? "bg-emerald-400" : "bg-border"}`} />
-              )}
-            </React.Fragment>
-          ))}
+        <div className="space-y-3 mb-8">
+          <Badge variant="outline" className="w-fit gap-1.5 bg-emerald-50 text-emerald-700 border-emerald-200">
+            <ShieldCheck className="h-3.5 w-3.5" />
+            MVP early access
+          </Badge>
+          <h1 className="text-3xl font-bold text-foreground tracking-tight">Join the UK tax marketplace waitlist</h1>
+          <p className="text-muted-foreground">
+            Get notified when matching projects, professionals, and beta access become available. Browse freely now, leave your email only if you're interested.
+          </p>
+          <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+            <span className="px-2.5 py-1 rounded-full bg-secondary border border-border">No password</span>
+            <span className="px-2.5 py-1 rounded-full bg-secondary border border-border">No verification</span>
+            <span className="px-2.5 py-1 rounded-full bg-secondary border border-border">No full account yet</span>
+          </div>
         </div>
 
-        {/* Step 1 — Basic info */}
-        {step === 1 && (
-          <div className="space-y-6">
-            <div>
-              <h1 className="text-2xl font-bold text-foreground tracking-tight">Let's set up your profile</h1>
-              <p className="mt-1 text-muted-foreground text-sm">Basic details first — we'll use your credentials to generate a great bio in step 3.</p>
+        <form onSubmit={handleSubmit} className="space-y-6 rounded-3xl border border-border/70 bg-card p-5 sm:p-7 shadow-sm">
+          <div className="space-y-2">
+            <Label htmlFor="email">Email address *</Label>
+            <div className="relative">
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                id="email"
+                type="email"
+                placeholder="you@example.com"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                className="pl-9 h-11"
+              />
             </div>
-            <div className="flex flex-wrap items-center gap-0 rounded-2xl border-2 border-emerald-400 bg-emerald-500 overflow-hidden shadow-md shadow-emerald-200">
-              {[
-                { check: "✓", label: "Join Free" },
-                { check: "✓", label: "Bid Free" },
-                { check: "✓", label: "No Commission" },
-              ].map((item, i) => (
-                <span key={item.label} className={`flex items-center gap-2 px-5 py-3 text-white font-black text-sm sm:text-base flex-1 justify-center ${i < 2 ? "border-r border-emerald-400" : ""}`}>
-                  <span className="text-emerald-200 text-lg leading-none">{item.check}</span>
-                  {item.label}
-                </span>
+          </div>
+
+          <div className="space-y-3">
+            <Label>I am a...</Label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {ROLE_OPTIONS.map((role) => (
+                <button
+                  key={role.value}
+                  type="button"
+                  onClick={() => setForm({ ...form, user_role: role.value })}
+                  className={`rounded-2xl border p-4 text-left transition-all ${
+                    form.user_role === role.value
+                      ? "border-primary bg-primary/5 text-primary"
+                      : "border-border hover:border-primary/40 text-foreground"
+                  }`}
+                >
+                  <p className="text-sm font-bold">{role.label}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{role.desc}</p>
+                </button>
               ))}
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="full_name">Full name *</Label>
-                <Input id="full_name" placeholder="Sarah Mitchell" value={form.full_name}
-                  onChange={(e) => setForm({ ...form, full_name: e.target.value })} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="title">Professional title *</Label>
-                <Input id="title" placeholder="e.g. CTA Tax Adviser · R&D Specialist" value={form.title}
-                  onChange={(e) => setForm({ ...form, title: e.target.value })} />
-              </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="location">Location</Label>
-                <Input id="location" placeholder="London / Remote" value={form.location}
-                  onChange={(e) => setForm({ ...form, location: e.target.value })} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="years_experience">Years of experience</Label>
-                <Input id="years_experience" type="number" placeholder="e.g. 8" value={form.years_experience}
-                  onChange={(e) => setForm({ ...form, years_experience: e.target.value })} />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="linkedin_url">LinkedIn (optional)</Label>
-              <Input id="linkedin_url" placeholder="linkedin.com/in/yourname" value={form.linkedin_url}
-                onChange={(e) => setForm({ ...form, linkedin_url: e.target.value })} />
-            </div>
-            <Button onClick={() => setStep(2)} disabled={!canAdvanceStep1} className="w-full h-11 rounded-xl font-semibold gap-2">
-              Continue <ArrowRight className="h-4 w-4" />
-            </Button>
           </div>
-        )}
 
-        {/* Step 2 — Credentials */}
-        {step === 2 && (
-          <div className="space-y-6">
-            <div>
-              <h1 className="text-2xl font-bold text-foreground tracking-tight">Qualifications & services</h1>
-              <p className="mt-1 text-muted-foreground text-sm">Your credentials are the main trust signal clients look for.</p>
-            </div>
+          {form.user_role === "professional" ? (
+            <>
+              <div className="space-y-4 rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4">
+                <div className="space-y-2">
+                  <Label htmlFor="full_name">Real full name *</Label>
+                  <Input
+                    id="full_name"
+                    placeholder="David Wang"
+                    value={form.full_name}
+                    onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Your real name is used to build trust, verification, and professional credibility on the platform.
+                  </p>
+                </div>
 
-            <div className="space-y-3">
-              <Label>Your qualifications *</Label>
-              <div className="flex flex-wrap gap-2">
-                {QUALIFICATIONS.map((q) => (
-                  <Badge key={q}
-                    variant={form.qualifications.includes(q) ? "default" : "outline"}
-                    className="cursor-pointer text-sm py-1.5 px-3 select-none"
-                    onClick={() => toggleItem("qualifications", q)}>
-                    {q}
-                    {form.qualifications.includes(q) && <X className="h-3 w-3 ml-1.5" />}
-                  </Badge>
-                ))}
+                <div className="space-y-2">
+                  <Label>Profile visibility</Label>
+                  <label className="flex items-start gap-3 rounded-xl border border-border bg-white/80 p-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={form.profile_public}
+                      onChange={(e) => setForm({ ...form, profile_public: e.target.checked })}
+                      className="mt-1 h-4 w-4 accent-primary"
+                    />
+                    <span>
+                      <span className="block text-sm font-semibold text-foreground">Public profile</span>
+                      <span className="block text-xs text-muted-foreground">Allow your marketplace profile to be publicly discoverable during beta.</span>
+                    </span>
+                  </label>
+                  <label className="flex items-start gap-3 rounded-xl border border-border bg-white/80 p-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={form.visible_to_clients}
+                      onChange={(e) => setForm({ ...form, visible_to_clients: e.target.checked })}
+                      className="mt-1 h-4 w-4 accent-primary"
+                    />
+                    <span>
+                      <span className="block text-sm font-semibold text-foreground">Visible to clients</span>
+                      <span className="block text-xs text-muted-foreground">Let clients see your profile in shortlist/search-style marketplace surfaces.</span>
+                    </span>
+                  </label>
+                </div>
               </div>
-              {form.qualifications.length === 0 && (
-                <p className="text-xs text-amber-600">Select at least one qualification to continue.</p>
-              )}
-            </div>
 
-            <div className="space-y-3">
-              <Label>Services you offer</Label>
-              <div className="flex flex-wrap gap-2">
-                {SPECIALISATIONS.map((s) => (
-                  <Badge key={s}
-                    variant={form.specialisations.includes(s) ? "default" : "outline"}
-                    className="cursor-pointer text-sm py-1.5 px-3 select-none"
-                    onClick={() => toggleItem("specialisations", s)}>
-                    {s}
-                    {form.specialisations.includes(s) && <X className="h-3 w-3 ml-1.5" />}
-                  </Badge>
-                ))}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="years_experience">Years experience (optional)</Label>
+                  <Input
+                    id="years_experience"
+                    type="number"
+                    placeholder="e.g. 5"
+                    value={form.years_experience}
+                    onChange={(e) => setForm({ ...form, years_experience: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Availability (optional)</Label>
+                  <Select value={form.availability} onValueChange={(v) => setForm({ ...form, availability: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="available">Available now</SelectItem>
+                      <SelectItem value="limited">Limited availability</SelectItem>
+                      <SelectItem value="unavailable">Not taking new clients yet</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-            </div>
 
-            <div className="space-y-3">
-              <Label>Software & tools you use</Label>
-              <div className="flex flex-wrap gap-2">
-                {SOFTWARE.map((s) => (
-                  <Badge key={s}
-                    variant={form.software_expertise.includes(s) ? "default" : "outline"}
-                    className="cursor-pointer text-sm py-1.5 px-3 select-none"
-                    onClick={() => toggleItem("software_expertise", s)}>
-                    {s}
-                    {form.software_expertise.includes(s) && <X className="h-3 w-3 ml-1.5" />}
-                  </Badge>
-                ))}
+              <div className="space-y-3">
+                <Label>Qualifications (optional)</Label>
+                <div className="flex flex-wrap gap-2">
+                  {QUALIFICATIONS.map((q) => (
+                    <Badge key={q}
+                      variant={form.qualifications.includes(q) ? "default" : "outline"}
+                      className="cursor-pointer text-sm py-1.5 px-3 select-none"
+                      onClick={() => toggleItem("qualifications", q)}>
+                      {q}
+                      {form.qualifications.includes(q) && <X className="h-3 w-3 ml-1.5" />}
+                    </Badge>
+                  ))}
+                </div>
               </div>
-            </div>
 
-            <div className="flex gap-3">
-              <Button variant="outline" onClick={() => setStep(1)} className="flex-1 h-11 rounded-xl">
-                Back
-              </Button>
-              <Button onClick={() => setStep(3)} disabled={!canAdvanceStep2} className="flex-1 h-11 rounded-xl font-semibold gap-2">
-                Continue <ArrowRight className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {/* Step 3 — Bio, rate & availability */}
-        {step === 3 && (
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <h1 className="text-2xl font-bold text-foreground tracking-tight">Your bio & preferences</h1>
-              <p className="mt-1 text-muted-foreground text-sm">We've generated a bio draft from your credentials. Edit it to make it yours.</p>
-            </div>
-
-            {/* AI Bio */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="bio">Professional bio</Label>
-                <AiBioGenerator form={form} onBioGenerated={(bio) => setForm({ ...form, bio })} autoGenerate />
+              <div className="space-y-3">
+                <Label>Specialties/services (optional)</Label>
+                <div className="flex flex-wrap gap-2">
+                  {SPECIALISATIONS.map((s) => (
+                    <Badge key={s}
+                      variant={form.specialisations.includes(s) ? "default" : "outline"}
+                      className="cursor-pointer text-sm py-1.5 px-3 select-none"
+                      onClick={() => toggleItem("specialisations", s)}>
+                      {s}
+                      {form.specialisations.includes(s) && <X className="h-3 w-3 ml-1.5" />}
+                    </Badge>
+                  ))}
+                </div>
               </div>
-              <Textarea id="bio"
-                placeholder="Generating your bio from your credentials…"
-                value={form.bio} onChange={(e) => setForm({ ...form, bio: e.target.value })}
-                className="h-32 resize-none" />
-              <p className="text-xs text-muted-foreground">Generated from your qualifications and specialisations. Edit freely or refine with AI again.</p>
-            </div>
 
-            {/* Rate */}
-            <div className="space-y-2">
-              <Label htmlFor="hourly_rate">Hourly rate (£)</Label>
-              <Input id="hourly_rate" type="number" placeholder="e.g. 95" value={form.hourly_rate}
-                onChange={(e) => setForm({ ...form, hourly_rate: e.target.value })} />
-              <p className="text-xs text-muted-foreground">Leave blank to show "Rate on request"</p>
-            </div>
-
-            {/* Availability */}
-            <div className="space-y-2">
-              <Label>Availability</Label>
-              <Select value={form.availability} onValueChange={(v) => setForm({ ...form, availability: v })}>
-                <SelectTrigger className="h-11"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="available">Available now</SelectItem>
-                  <SelectItem value="limited">Limited availability</SelectItem>
-                  <SelectItem value="unavailable">Not taking new clients</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Remote */}
-            <div className="flex items-center gap-3 p-4 rounded-xl border border-border/60 bg-secondary/30">
-              <Switch checked={form.remote_work} onCheckedChange={(v) => setForm({ ...form, remote_work: v })} />
-              <div>
-                <Label className="cursor-pointer">Available for remote work</Label>
-                <p className="text-xs text-muted-foreground mt-0.5">Most clients on TaxPro UK prefer remote-first professionals.</p>
+              <div className="space-y-2 rounded-2xl border border-violet-100 bg-violet-50/60 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <Label htmlFor="bio_notes" className="flex items-center gap-1.5">
+                    <Sparkles className="h-4 w-4 text-violet-600" />
+                    Optional AI bio
+                  </Label>
+                  <AiBioGenerator
+                    form={aiBioForm}
+                    onBioGenerated={(bio) => setForm((current) => ({ ...current, bio }))}
+                    onLoadingChange={setBioGenerating}
+                  />
+                </div>
+                <Textarea
+                  id="bio_notes"
+                  placeholder="Optional notes for the AI bio, e.g. I am very experienced in CGT and property tax."
+                  value={form.bio_notes}
+                  onChange={(e) => setForm({ ...form, bio_notes: e.target.value })}
+                  className="h-20 resize-none bg-white"
+                />
+                <Textarea
+                  placeholder={bioGenerating ? "Generating professional bio..." : "Generated bio appears here. You can edit it before joining early access."}
+                  value={form.bio}
+                  onChange={(e) => setForm({ ...form, bio: e.target.value })}
+                  className="h-28 resize-none bg-white"
+                />
               </div>
-            </div>
-
-            {/* Visibility */}
-            <div className="space-y-3">
-              <Label>Profile visibility</Label>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                {[
-                  { value: "public", icon: Eye, label: "Public", desc: "Visible in search & directory" },
-                  { value: "hidden", icon: EyeOff, label: "Hidden", desc: "Not in search, AI-matchable" },
-                  { value: "private", icon: Lock, label: "Private", desc: "Fully private, invite only" },
-                ].map(({ value, icon: Icon, label, desc }) => (
-                  <button key={value} type="button"
-                    onClick={() => setForm({ ...form, visibility: value })}
-                    className={`flex flex-col items-start gap-1 p-3 rounded-xl border text-left transition-all ${
-                      form.visibility === value
-                        ? "border-primary bg-primary/5 text-primary"
-                        : "border-border hover:border-primary/40 text-foreground"
-                    }`}>
-                    <div className="flex items-center gap-1.5">
-                      <Icon className="h-4 w-4" />
-                      <span className="text-sm font-semibold">{label}</span>
-                    </div>
-                    <span className="text-xs text-muted-foreground leading-snug">{desc}</span>
-                  </button>
-                ))}
+            </>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <Label>Client/company type (optional)</Label>
+                <Select value={form.client_type} onValueChange={(v) => setForm({ ...form, client_type: v })}>
+                  <SelectTrigger><SelectValue placeholder="Choose the closest fit" /></SelectTrigger>
+                  <SelectContent>
+                    {CLIENT_TYPES.map((type) => <SelectItem key={type} value={type}>{type}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
-              <p className="text-xs text-muted-foreground">Hidden profiles can still receive AI-matched opportunities from clients.</p>
-            </div>
 
-            {/* Summary */}
-            <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm space-y-1.5">
-              <p className="font-semibold text-foreground">Profile summary</p>
-              <p className="text-muted-foreground"><span className="text-foreground font-medium">{form.full_name}</span> · {form.title}</p>
-              {form.qualifications.length > 0 && <p className="text-muted-foreground">Qualifications: {form.qualifications.join(", ")}</p>}
-              {form.hourly_rate && <p className="text-muted-foreground">Rate: £{form.hourly_rate}/hr</p>}
-            </div>
+              <div className="space-y-3">
+                <Label>Project category interest (optional)</Label>
+                <div className="flex flex-wrap gap-2">
+                  {PROJECT_INTERESTS.map((interest) => (
+                    <Badge key={interest}
+                      variant={form.project_interests.includes(interest) ? "default" : "outline"}
+                      className="cursor-pointer text-sm py-1.5 px-3 select-none"
+                      onClick={() => toggleItem("project_interests", interest)}>
+                      {interest}
+                      {form.project_interests.includes(interest) && <X className="h-3 w-3 ml-1.5" />}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
 
-            <div className="flex gap-3">
-              <Button type="button" variant="outline" onClick={() => setStep(2)} className="flex-1 h-11 rounded-xl">
-                Back
-              </Button>
-              <Button type="submit" disabled={isSubmitting} className="flex-1 h-12 rounded-xl font-semibold text-base gap-2">
-                {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                Publish Profile Free
-              </Button>
-            </div>
-            <p className="text-center text-xs text-muted-foreground">Your profile goes live immediately. You can edit it any time.</p>
-          </form>
-        )}
+          <Button type="submit" disabled={isSubmitting} className="w-full h-12 rounded-xl font-semibold text-base gap-2">
+            {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+            {form.user_role === "professional" ? "Get notified about matching projects" : "Join early access"}
+          </Button>
+
+          <p className="text-center text-xs text-muted-foreground">
+            We’ll only use this for launch updates, beta access, and relevant project notifications. No account or password needed.
+          </p>
+        </form>
+
+        <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Link to="/jobs">
+            <Button variant="outline" className="w-full rounded-xl">Browse projects without signup</Button>
+          </Link>
+          <Link to="/professionals">
+            <Button variant="outline" className="w-full rounded-xl">Browse professionals</Button>
+          </Link>
+        </div>
       </div>
     </div>
   );

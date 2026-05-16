@@ -7,7 +7,7 @@
 import React from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { TrendingUp, Users, Clock, AlertCircle, CheckCircle2, Sparkles, BarChart3, ShieldCheck, Info } from "lucide-react";
-import { predictBidderInterest, computeFairMarketRange } from "@/lib/marketplaceIntelligence";
+import { predictBidderInterest } from "@/lib/marketplaceIntelligence";
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -59,8 +59,16 @@ function BudgetHealthBadge({ level, label }) {
 export default function MarketplaceIntelligence({
   category,
   complexity = "medium",
-  urgency = "flexible",
+  urgency = "negotiable",
+  biddingPeriod,
+  biddingDeadline,
   budgetAmount,
+  remote = true,
+  missingRecords = false,
+  multipleIncomeSources = false,
+  internationalTaxIssues = false,
+  estimatedWorkload,
+  deadlinePressure,
   descriptionLength = 0,
   compact = false,
 }) {
@@ -70,7 +78,15 @@ export default function MarketplaceIntelligence({
     category,
     complexity,
     urgency,
+    biddingPeriod,
+    biddingDeadline,
     budgetAmount,
+    remote,
+    missingRecords,
+    multipleIncomeSources,
+    internationalTaxIssues,
+    estimatedWorkload,
+    deadlinePressure,
     hasDescription: descriptionLength > 30,
     descriptionLength,
   });
@@ -83,6 +99,13 @@ export default function MarketplaceIntelligence({
     rose:    { bar: "bg-rose-500",    text: "text-rose-700",    bg: "bg-rose-50 border-rose-200" },
   };
   const colors = colorMap[interest.interestColor] || colorMap.amber;
+  const pressureTone = interest.pricingPressureScore >= 85 ? "rose" : interest.pricingPressureScore >= 70 ? "amber" : interest.pricingPressureScore >= 50 ? "violet" : "emerald";
+  const pressureStyles = {
+    rose: { bar: "bg-rose-500", text: "text-rose-700", bg: "bg-rose-50 border-rose-200" },
+    amber: { bar: "bg-amber-500", text: "text-amber-700", bg: "bg-amber-50 border-amber-200" },
+    violet: { bar: "bg-violet-500", text: "text-violet-700", bg: "bg-violet-50 border-violet-200" },
+    emerald: { bar: "bg-emerald-500", text: "text-emerald-700", bg: "bg-emerald-50 border-emerald-200" },
+  }[pressureTone];
 
   // Budget vs market range visual
   const budgetPct = budgetAmount
@@ -119,7 +142,7 @@ export default function MarketplaceIntelligence({
               £{marketRange.min.toLocaleString()}–£{marketRange.max.toLocaleString()}
             </span>
           </div>
-          <p className="text-xs text-violet-600">Professionals may submit lower opening bids before reviewing full project details. Many will increase after seeing your complete brief.</p>
+          <p className="text-xs text-violet-600">Recommended range reflects complexity, urgency, workload, delivery model, and market conditions.</p>
 
           {/* Visual range bar */}
           <div className="relative h-5 bg-secondary rounded-full overflow-hidden">
@@ -182,11 +205,39 @@ export default function MarketplaceIntelligence({
               <Users className="h-3.5 w-3.5 text-primary" />
               Bidder Interest
             </p>
-            <span className={`text-xs font-bold ${colors.text}`}>{interest.interestLevel}</span>
+            <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${colors.text} ${colors.bg} border`}>
+              {interest.interestLevel}
+            </span>
           </div>
-          <HealthBar value={interest.budgetScore} colorClass={colors.bar} />
+          <HealthBar value={interest.interestScore} colorClass={colors.bar} />
           <p className="text-[11px] text-muted-foreground">{interest.qualityLabel}</p>
         </div>
+
+        {!compact && (
+          <div className="rounded-xl border border-border/60 bg-white/70 px-3 py-3 space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Bidder Interest Volume</p>
+                <p className="text-xs text-muted-foreground">How many professionals are likely to want this project.</p>
+              </div>
+              <span className={`text-lg font-extrabold ${colors.text}`}>{interest.interestScore}%</span>
+            </div>
+            <HealthBar value={interest.interestScore} colorClass={colors.bar} />
+          </div>
+        )}
+
+        {!compact && (
+          <div className={`rounded-xl border px-3 py-3 space-y-2 ${pressureStyles.bg}`}>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest opacity-80">Expected Pricing Pressure</p>
+                <p className="text-xs opacity-80">How strongly conditions push professional quotes upward.</p>
+              </div>
+              <span className={`text-lg font-extrabold ${pressureStyles.text}`}>{interest.pricingPressureLevel}</span>
+            </div>
+            <HealthBar value={interest.pricingPressureScore} colorClass={pressureStyles.bar} />
+          </div>
+        )}
 
         {/* Stats grid */}
         {!compact && (
@@ -197,16 +248,20 @@ export default function MarketplaceIntelligence({
               color={colors.text}
               bg={`${colors.bg} border`}
             />
-            <StatPill
-              label="First bid in"
-              value={interest.hoursToFirstBid}
-              color="text-foreground"
-            />
+            <StatPill label="First bid in" value={interest.estimatedResponseSpeed} color="text-foreground" />
             <StatPill
               label="Bid quality"
               value={interest.bidQuality}
               color="text-foreground"
             />
+          </div>
+        )}
+
+        {!compact && (
+          <div className="grid grid-cols-2 gap-2">
+            <StatPill label="Expected bidder type" value={interest.expectedBidderType} color="text-primary" />
+            <StatPill label="Market activity" value={interest.marketActivityLevel} color={colors.text} bg={`${colors.bg} border`} />
+            <StatPill label="Recommended bidding" value={interest.recommendedBiddingDuration.label} color="text-primary" />
           </div>
         )}
 
@@ -233,6 +288,27 @@ export default function MarketplaceIntelligence({
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-100 text-xs text-emerald-700">
             <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
             <span>Your budget is within fair market range — you should attract qualified, experienced professionals.</span>
+          </div>
+        )}
+
+        {!compact && interest.recommendations.length > 0 && (
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Recommendations</p>
+            {interest.recommendations.slice(0, 4).map((rec, i) => (
+              <div
+                key={`${rec.text}-${i}`}
+                className={`flex items-start gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs ${
+                  rec.type === "positive"
+                    ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                    : rec.type === "danger"
+                      ? "bg-rose-50 border-rose-200 text-rose-700"
+                      : "bg-amber-50 border-amber-200 text-amber-700"
+                }`}
+              >
+                {rec.type === "positive" ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-0.5" /> : <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />}
+                <span>{rec.text}</span>
+              </div>
+            ))}
           </div>
         )}
       </div>

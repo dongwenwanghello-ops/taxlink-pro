@@ -24,10 +24,447 @@ const COMPLEXITY_FACTORS = {
 };
 
 const URGENCY_MULTIPLIERS = {
+  negotiable: 0.95,
   flexible: 0.95,
+  standard: 1.0,
   within_month: 1.0,
+  within_2weeks: 1.08,
+  within_week: 1.12,
   urgent: 1.15,
+  asap: 1.25,
 };
+
+const CATEGORY_KEYWORDS = {
+  tax_return: /tax return|self assessment|hmrc|utr|income tax/i,
+  vat: /vat|making tax digital|mtd|quarterly return/i,
+  vat_return: /vat|making tax digital|mtd|quarterly return/i,
+  corporation_tax: /corporation tax|ct600|company tax|limited company/i,
+  rd_claim: /r&d|research and development|rd claim|innovation/i,
+  payroll: /payroll|paye|pension|auto.?enrol/i,
+  bookkeeping: /bookkeeping|xero|quickbooks|bank reconciliation|records/i,
+  tax_investigation: /investigation|enquiry|hmrc dispute|compliance check/i,
+  capital_gains: /capital gains|cgt|property disposal|asset sale/i,
+  inheritance_tax: /inheritance|iht|estate|probate/i,
+  advisory: /advisory|planning|forecast|strategy|consult/i,
+};
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function normalisePercent(value, fallback = 70) {
+  if (value === undefined || value === null || value === "") return fallback;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return clamp(n > 1 ? n : n * 100, 0, 100);
+}
+
+function getCompetitivenessBand(score) {
+  if (score >= 84) {
+    return {
+      min: 75,
+      max: 90,
+      label: "High chance",
+      tone: "high",
+      summary: "High chance, but still dependent on client preference and final comparison.",
+    };
+  }
+  if (score >= 70) {
+    return {
+      min: 60,
+      max: 75,
+      label: "Strong position",
+      tone: "strong",
+      summary: "Strong position. Your bid has several signals clients usually shortlist.",
+    };
+  }
+  if (score >= 54) {
+    return {
+      min: 45,
+      max: 60,
+      label: "Competitive",
+      tone: "competitive",
+      summary: "Competitive. Improve pricing, proposal detail, or response speed to stand out.",
+    };
+  }
+  if (score >= 36) {
+    return {
+      min: 30,
+      max: 45,
+      label: "Outside chance",
+      tone: "watch",
+      summary: "Outside chance. A few factors are holding the bid back.",
+    };
+  }
+  return {
+    min: 20,
+    max: 35,
+    label: "Low chance",
+    tone: "low",
+    summary: "Low chance. This bid is unlikely to compete without changes.",
+  };
+}
+
+function scorePriceCompetitiveness(bidAmount, budgetAmount, complexity = "medium") {
+  if (!bidAmount || Number(bidAmount) <= 0) {
+    return {
+      score: 0,
+      insight: { type: "warning", text: "Add a quote amount to estimate competitiveness." },
+      ratio: null,
+      marketAverage: null,
+    };
+  }
+
+  if (!budgetAmount || Number(budgetAmount) <= 0) {
+    return {
+      score: 58,
+      insight: { type: "neutral", text: "No opening budget is available, so pricing is scored against market signals only." },
+      ratio: null,
+      marketAverage: null,
+    };
+  }
+
+  const bid = Number(bidAmount);
+  const budget = Number(budgetAmount);
+  const ratio = bid / budget;
+  const tolerance = complexity === "complex" ? 0.12 : complexity === "simple" ? 0.04 : 0.08;
+  const marketAverage = Math.round(budget * (0.9 + tolerance / 2));
+
+  if (ratio >= 0.78 && ratio <= 1.02 + tolerance) {
+    return {
+      score: ratio <= 0.95 ? 90 : 78,
+      insight: { type: "positive", text: ratio <= 0.95 ? "Fair pricing is slightly below the opening budget." : "Pricing is within the expected marketplace range." },
+      ratio,
+      marketAverage,
+    };
+  }
+  if (ratio < 0.6) {
+    return {
+      score: 42,
+      insight: { type: "warning", text: "Your pricing is very low, which can reduce trust for professional work." },
+      ratio,
+      marketAverage,
+    };
+  }
+  if (ratio < 0.78) {
+    return {
+      score: 68,
+      insight: { type: "neutral", text: "Your pricing is competitive, but the proposal should reassure the client on quality." },
+      ratio,
+      marketAverage,
+    };
+  }
+  if (ratio <= 1.25 + tolerance) {
+    return {
+      score: 48,
+      insight: { type: "warning", text: "Your pricing is above the marketplace average for this opening budget." },
+      ratio,
+      marketAverage,
+    };
+  }
+  return {
+    score: 24,
+    insight: { type: "negative", text: "Your pricing is well above the marketplace average and may reduce shortlist likelihood." },
+    ratio,
+    marketAverage,
+  };
+}
+
+function scoreProposalQuality(proposal = "", category = "other") {
+  const text = proposal.trim();
+  const words = text.split(/\s+/).filter(Boolean).length;
+  const categoryMatch = CATEGORY_KEYWORDS[category]?.test(text) || false;
+  const hasApproach = /approach|process|review|prepare|submit|reconcile|check|deliver|file/i.test(text);
+  const hasCredentials = /acca|aca|cta|att|aat|qualified|specialist|experience|years?/i.test(text);
+  const hasTiming = /today|24 hours|day|week|deadline|turnaround|complete|deliver/i.test(text);
+  const hasSpecifics = categoryMatch || hasApproach || hasCredentials || hasTiming;
+
+  let score = words >= 90 ? 92 : words >= 55 ? 82 : words >= 30 ? 68 : words >= 15 ? 48 : words > 0 ? 28 : 0;
+  score += (categoryMatch ? 8 : 0) + (hasApproach ? 8 : 0) + (hasCredentials ? 7 : 0) + (hasTiming ? 5 : 0);
+  if (text && /^hi\b|^hello\b|^i can help\b/i.test(text) && !hasSpecifics) score -= 18;
+  score = clamp(score, 0, 100);
+
+  const insights = [];
+  if (!text) insights.push({ type: "warning", text: "Add a proposal so the client can judge fit and approach." });
+  else if (score >= 75) insights.push({ type: "positive", text: "Strong proposal quality detected from detail, approach, and relevant signals." });
+  else if (words < 30) insights.push({ type: "warning", text: "A short proposal limits trust. Add approach, experience, and expected turnaround." });
+  else insights.push({ type: "neutral", text: "Proposal is reasonable, but more project-specific detail would improve your position." });
+  if (categoryMatch) insights.push({ type: "positive", text: "Strong specialist/category match detected in the proposal." });
+  if (!hasCredentials && text) insights.push({ type: "neutral", text: "Mention qualifications or relevant experience to improve client confidence." });
+
+  return { score, insights, words, categoryMatch };
+}
+
+const DELIVERY_TIMELINE_PROFILES = {
+  "24h": {
+    speed: 96,
+    urgencyFit: { asap: 94, urgent: 88, standard: 58, negotiable: 48, flexible: 48 },
+    realism: { simple: 88, medium: 58, complex: 30 },
+    label: "Within 24 hours",
+  },
+  "3d": {
+    speed: 84,
+    urgencyFit: { asap: 82, urgent: 90, standard: 74, negotiable: 66, flexible: 66 },
+    realism: { simple: 86, medium: 84, complex: 58 },
+    label: "2-3 days",
+  },
+  "1w": {
+    speed: 68,
+    urgencyFit: { asap: 42, urgent: 62, standard: 88, negotiable: 84, flexible: 84 },
+    realism: { simple: 70, medium: 90, complex: 80 },
+    label: "Within 1 week",
+  },
+  "2w": {
+    speed: 50,
+    urgencyFit: { asap: 24, urgent: 42, standard: 76, negotiable: 88, flexible: 88 },
+    realism: { simple: 48, medium: 78, complex: 92 },
+    label: "1-2 weeks",
+  },
+  "1m": {
+    speed: 32,
+    urgencyFit: { asap: 16, urgent: 28, standard: 52, negotiable: 78, flexible: 78 },
+    realism: { simple: 28, medium: 52, complex: 82 },
+    label: "Within a month",
+  },
+};
+
+function scoreDeliveryTiming({ timeline, responseSpeed, submittedAt, projectCreatedAt, urgency, complexity }) {
+  const profile = DELIVERY_TIMELINE_PROFILES[timeline];
+  let speedScore = normalisePercent(responseSpeed, null);
+
+  if (!profile) {
+    const fallback = speedScore ?? 55;
+    return {
+      score: fallback,
+      speedScore: fallback,
+      urgencyFitScore: 55,
+      realismScore: 55,
+      label: "Timeline not selected",
+      insight: { type: "neutral", text: "Select a delivery timeline to improve competitiveness scoring." },
+    };
+  }
+
+  if (speedScore === null) {
+    speedScore = profile.speed;
+  }
+
+  const normalisedUrgency = urgency || "negotiable";
+  const normalisedComplexity = complexity || "medium";
+  const urgencyFitScore = profile.urgencyFit[normalisedUrgency] ?? profile.urgencyFit.standard;
+  const realismScore = profile.realism[normalisedComplexity] ?? profile.realism.medium;
+
+  if (submittedAt && projectCreatedAt) {
+    const elapsedHours = (new Date(submittedAt) - new Date(projectCreatedAt)) / 36e5;
+    if (Number.isFinite(elapsedHours)) {
+      if (elapsedHours <= 2) speedScore += 10;
+      else if (elapsedHours <= 8) speedScore += 6;
+      else if (elapsedHours >= 48) speedScore -= 8;
+    }
+  }
+
+  let score = speedScore * 0.2 + urgencyFitScore * 0.43 + realismScore * 0.37;
+  if (normalisedComplexity === "complex" && timeline === "24h") score -= 12;
+  if (normalisedComplexity === "complex" && (timeline === "1w" || timeline === "2w")) score += 4;
+  if ((normalisedUrgency === "asap" || normalisedUrgency === "urgent") && (timeline === "24h" || timeline === "3d")) score += 5;
+  score = clamp(score, 0, 100);
+
+  let insight;
+  if (normalisedComplexity === "complex" && timeline === "24h") {
+    insight = { type: "warning", text: "Very short timelines on complex work may reduce trust unless your proposal explains delivery clearly." };
+  } else if ((normalisedUrgency === "asap" || normalisedUrgency === "urgent") && (timeline === "24h" || timeline === "3d")) {
+    insight = { type: "positive", text: "Your delivery timeline matches the client urgency well." };
+  } else if ((normalisedUrgency === "asap" || normalisedUrgency === "urgent") && (timeline === "2w" || timeline === "1m")) {
+    insight = { type: "warning", text: "Faster delivery may improve competitiveness for this urgent project." };
+  } else if (normalisedComplexity === "complex" && (timeline === "1w" || timeline === "2w")) {
+    insight = { type: "positive", text: "Timeline appears realistic for the project complexity." };
+  } else if (score >= 76) {
+    insight = { type: "positive", text: "Delivery timing is commercially believable for this project." };
+  } else if (score < 48) {
+    insight = { type: "warning", text: "Delivery timing weakens urgency fit or client attractiveness." };
+  } else {
+    insight = { type: "neutral", text: "Delivery timing is acceptable, but not a major advantage." };
+  }
+
+  return {
+    score,
+    speedScore: clamp(speedScore, 0, 100),
+    urgencyFitScore,
+    realismScore,
+    label: profile.label,
+    insight,
+  };
+}
+
+function scoreCompetition(bidCount = 0, urgency = "negotiable") {
+  const count = Math.max(0, Number(bidCount) || 0);
+  const urgencyPressure = urgency === "asap" ? 1 : urgency === "urgent" ? 0.8 : urgency === "standard" ? 0.35 : 0;
+  const score = clamp(92 - count * 7 + urgencyPressure * 6, 18, 96);
+  return {
+    score,
+    level: count <= 1 ? "Low competition" : count <= 4 ? "Active competition" : count <= 8 ? "Crowded field" : "Highly competitive",
+    insight: count <= 1
+      ? { type: "positive", text: "Low competitor count gives you an early visibility advantage." }
+      : count >= 8
+        ? { type: "warning", text: "Many competitors are bidding, so proposal quality and pricing matter more." }
+        : { type: "neutral", text: `${count} competing bid${count === 1 ? "" : "s"} creates a normal marketplace challenge.` },
+  };
+}
+
+function scoreSpecialistMatch({ category, qualifications = [], requiredQualifications = [], proposal = "", categoryMatch }) {
+  const upperQuals = qualifications.map((q) => String(q).toUpperCase());
+  const upperRequired = requiredQualifications.map((q) => String(q).toUpperCase());
+  const requiredMatch = upperRequired.length > 0 && upperRequired.some((q) => upperQuals.includes(q));
+  const specialistQual = upperQuals.some((q) => ["CTA", "ACA", "ACCA", "ATT", "AAT", "ICAEW"].includes(q));
+  const keywordMatch = categoryMatch || CATEGORY_KEYWORDS[category]?.test(proposal || "");
+
+  let score = 46;
+  if (specialistQual) score += 24;
+  if (requiredMatch) score += 18;
+  if (keywordMatch) score += 12;
+  score = clamp(score, 0, 100);
+
+  return {
+    score,
+    insight: requiredMatch || keywordMatch || specialistQual
+      ? { type: "positive", text: "Strong specialist match detected." }
+      : { type: "neutral", text: "Specialist fit is unclear. Mention relevant category experience." },
+  };
+}
+
+function normaliseExperienceScore(yearsExperience) {
+  if (!yearsExperience) return 0;
+  const text = String(yearsExperience).toLowerCase();
+  if (/10\+|10\s*years|1[0-9]|2[0-9]/.test(text)) return 92;
+  if (/5\s*-\s*10|5.?10|[5-9]\s*years?/.test(text)) return 78;
+  if (/3\s*-\s*5|3.?5|[3-4]\s*years?/.test(text)) return 62;
+  if (/1\s*-\s*3|1.?3|[1-2]\s*years?/.test(text)) return 44;
+  const numeric = Number(text.match(/\d+/)?.[0]);
+  if (!Number.isFinite(numeric)) return 0;
+  return numeric >= 10 ? 92 : numeric >= 5 ? 78 : numeric >= 3 ? 62 : numeric >= 1 ? 44 : 0;
+}
+
+/**
+ * computeBidCompetitiveness - transparent marketplace bid scoring.
+ *
+ * Returns a realistic probability band instead of a precise claim. The internal
+ * score is deterministic and updates as price, proposal, competition, timing,
+ * reputation, and trust inputs change.
+ */
+export function computeBidCompetitiveness({
+  amount,
+  budgetAmount,
+  proposal = "",
+  timeline,
+  bidCount = 0,
+  urgency = "negotiable",
+  category = "other",
+  complexity = "medium",
+  qualifications = [],
+  requiredQualifications = [],
+  rating = 0,
+  completedJobs = 0,
+  yearsExperience,
+  reputationScore,
+  onTimeCompletionRate = 0.8,
+  clientTrustScore = 0.85,
+  responseSpeed,
+  submittedAt,
+  projectCreatedAt,
+} = {}) {
+  if (!amount || Number(amount) <= 0) return null;
+
+  const price = scorePriceCompetitiveness(amount, budgetAmount, complexity);
+  const proposalQuality = scoreProposalQuality(proposal, category);
+  const response = scoreDeliveryTiming({ timeline, responseSpeed, submittedAt, projectCreatedAt, urgency, complexity });
+  const competition = scoreCompetition(bidCount, urgency);
+  const specialist = scoreSpecialistMatch({
+    category,
+    qualifications,
+    requiredQualifications,
+    proposal,
+    categoryMatch: proposalQuality.categoryMatch,
+  });
+
+  const ratingScore = normalisePercent(rating ? Number(rating) / 5 : undefined, 58);
+  const completionScore = clamp(Math.log1p(Number(completedJobs) || 0) / Math.log1p(25) * 100, 0, 100);
+  const experienceScore = normaliseExperienceScore(yearsExperience);
+  const suppliedReputation = reputationScore === undefined ? null : normalisePercent(reputationScore, 58);
+  const reputation = suppliedReputation ?? clamp(ratingScore * 0.52 + completionScore * 0.28 + experienceScore * 0.20, 0, 100);
+  const onTime = normalisePercent(onTimeCompletionRate, 80);
+  const clientTrust = normalisePercent(clientTrustScore, 85);
+
+  const weights = {
+    price: 0.24,
+    proposal: 0.18,
+    response: 0.12,
+    competition: 0.15,
+    specialist: 0.11,
+    reputation: 0.10,
+    onTime: 0.06,
+    clientTrust: 0.04,
+  };
+
+  let score =
+    price.score * weights.price +
+    proposalQuality.score * weights.proposal +
+    response.score * weights.response +
+    competition.score * weights.competition +
+    specialist.score * weights.specialist +
+    reputation * weights.reputation +
+    onTime * weights.onTime +
+    clientTrust * weights.clientTrust;
+
+  if ((urgency === "urgent" || urgency === "asap") && response.score >= 78) score += 4;
+  if (complexity === "complex" && timeline === "24h") score -= 3;
+  if (complexity === "complex" && (timeline === "1w" || timeline === "2w")) score += 2;
+  if (competition.score < 35 && proposalQuality.score < 50) score -= 6;
+  score = Math.round(clamp(score, 15, 92));
+
+  const band = getCompetitivenessBand(score);
+  const insights = [
+    price.insight,
+    proposalQuality.insights[0],
+    response.insight,
+    competition.insight,
+    specialist.insight,
+  ].filter(Boolean);
+
+  if (reputation >= 76) insights.push({ type: "positive", text: "Reputation score supports a stronger shortlist position." });
+  else if (reputation < 45) insights.push({ type: "warning", text: "Limited reputation history reduces client confidence." });
+  if (experienceScore >= 78) insights.push({ type: "positive", text: "Senior experience improves trust for professional comparison." });
+  if (onTime >= 90) insights.push({ type: "positive", text: "High on-time completion rate improves client trust." });
+  if (clientTrust < 60) insights.push({ type: "neutral", text: "Client trust signals are still developing, so outcomes may be less predictable." });
+
+  return {
+    score,
+    probabilityRange: band,
+    displayRange: `${band.min}-${band.max}%`,
+    label: band.label,
+    summary: band.summary,
+    factors: {
+      price: price.score,
+      proposal: proposalQuality.score,
+      response: response.score,
+      competition: competition.score,
+      specialist: specialist.score,
+      reputation,
+      onTime,
+      clientTrust,
+      urgencyFit: response.urgencyFitScore,
+      timelineRealism: response.realismScore,
+    },
+    insights,
+    market: {
+      pricingRatio: price.ratio,
+      marketAverage: price.marketAverage,
+      competitionLevel: competition.level,
+      proposalWords: proposalQuality.words,
+      deliveryTimeline: response.label,
+      urgencyFitScore: response.urgencyFitScore,
+      timelineRealismScore: response.realismScore,
+    },
+  };
+}
 
 /**
  * computeWinProbability - Calculate bid win chance (0-100)
@@ -37,7 +474,7 @@ const URGENCY_MULTIPLIERS = {
  * @param {number} params.budgetAmount - Project starting budget
  * @param {string} params.category - Project category
  * @param {string} params.complexity - simple | medium | complex
- * @param {string} params.urgency - flexible | within_month | urgent
+ * @param {string} params.urgency - negotiable | standard | urgent | asap
  * @param {number} params.bidCount - Current number of bidders
  * @param {number} params.clientPaymentRate - 0-100 client reliability
  * @param {number} params.userRating - 0-5 user star rating
@@ -52,7 +489,7 @@ export function computeWinProbability({
   budgetAmount,
   category = "other",
   complexity = "medium",
-  urgency = "flexible",
+  urgency = "negotiable",
   bidCount = 4,
   clientPaymentRate = 85,
   userRating = 3.5,

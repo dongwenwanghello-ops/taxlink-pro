@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { DEMO_REVIEWS, DEMO_PROFESSIONALS } from "@/lib/demoData";
+import { getPostedProjects } from "@/lib/projectStore";
+import { getAllBids } from "@/lib/bidStore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -19,6 +21,61 @@ const SERVICE_TYPES = [
   "Self Assessment", "Corporation Tax", "VAT Return", "Bookkeeping",
   "Payroll", "Audit", "Tax Planning", "R&D Tax Credits", "Capital Gains", "Other"
 ];
+
+const LOCAL_REVIEW_KEY = "taxprouk_verified_reviews";
+const REVIEW_TAGS = [
+  "Delivered on time",
+  "Strong communication",
+  "Professional advice",
+  "Clear explanations",
+  "Responsive",
+  "Would hire again",
+];
+
+function getLocalReviews() {
+  try {
+    const reviews = JSON.parse(localStorage.getItem(LOCAL_REVIEW_KEY) || "[]");
+    return Array.isArray(reviews) ? reviews : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalReview(review) {
+  const saved = {
+    id: `review_${Date.now()}`,
+    created_date: new Date().toISOString(),
+    verified: true,
+    review_source: "completed_project",
+    ...review,
+  };
+  localStorage.setItem(LOCAL_REVIEW_KEY, JSON.stringify([saved, ...getLocalReviews()]));
+  window.dispatchEvent(new CustomEvent("reviewSubmitted", { detail: saved }));
+  return saved;
+}
+
+function getReviewEligibleProjects() {
+  const projects = getPostedProjects();
+  const bids = getAllBids();
+  const existingReviews = getLocalReviews();
+
+  return projects
+    .filter((project) => project.status === "completed" || project.lifecycle_state === "completed" || project.review_available)
+    .map((project) => {
+      const acceptedBid = bids.find((bid) =>
+        bid.project_id === project.id &&
+        (bid.status === "accepted" || bid.awarded || bid.id === project.accepted_bid_id || bid.id === project.awarded_bid_id)
+      );
+      if (!acceptedBid) return null;
+      const alreadyReviewed = existingReviews.some((review) => review.project_id === project.id && review.professional_bid_id === acceptedBid.id);
+      return {
+        project,
+        bid: acceptedBid,
+        alreadyReviewed,
+      };
+    })
+    .filter(Boolean);
+}
 
 const SUB_RATINGS = [
   { key: "communication_rating",   label: "Communication" },
@@ -84,7 +141,12 @@ function ReviewCard({ review, professionals, index }) {
             )}
             {review.verified && (
               <Badge variant="secondary" className="text-xs gap-1 font-normal py-0">
-                <CheckCircle2 className="h-3 w-3 text-emerald-500" />Verified
+                <CheckCircle2 className="h-3 w-3 text-emerald-500" />Verified Client Review
+              </Badge>
+            )}
+            {review.review_source === "completed_project" && (
+              <Badge variant="outline" className="text-xs gap-1 font-normal py-0 bg-emerald-50 text-emerald-700 border-emerald-200">
+                <ShieldCheck className="h-3 w-3" />Completed Project Review
               </Badge>
             )}
           </div>
@@ -109,6 +171,12 @@ function ReviewCard({ review, professionals, index }) {
           Review of: {professional.full_name} — {professional.title}
         </div>
       )}
+      {!professional && review.professional_name && (
+        <div className="flex items-center gap-1.5 text-xs text-primary font-medium">
+          <Award className="h-3.5 w-3.5" />
+          Review of: {review.professional_name}
+        </div>
+      )}
 
       {/* Project link */}
       {review.project_title && (
@@ -118,8 +186,20 @@ function ReviewCard({ review, professionals, index }) {
         </div>
       )}
 
+      {review.feedback_tags?.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {review.feedback_tags.map((tag) => (
+            <span key={tag} className="px-2 py-0.5 rounded-full bg-primary/8 text-primary border border-primary/15 text-[10px] font-bold">
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* Comment */}
-      <p className="text-sm text-foreground leading-relaxed">{review.comment}</p>
+      {review.comment && (
+        <p className="text-sm text-foreground leading-relaxed">{review.comment}</p>
+      )}
 
       {/* Sub-dimension ratings */}
       {hasSubs && (
@@ -154,6 +234,8 @@ function ReviewCard({ review, professionals, index }) {
 export default function Reviews() {
   const [showForm, setShowForm] = useState(false);
   const [dbReviews, setDbReviews] = useState([]);
+  const [localReviews, setLocalReviews] = useState(() => getLocalReviews());
+  const [eligibleProjects, setEligibleProjects] = useState(() => getReviewEligibleProjects());
   const [dbProfessionals, setDbProfessionals] = useState([]);
   const [loadingReviews, setLoadingReviews] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -168,8 +250,15 @@ export default function Reviews() {
     comment: "",
     service_type: "",
     professional_id: "",
+    transaction_id: "",
+    feedback_tags: [],
     would_rehire: true,
   });
+
+  const refreshEligibility = () => {
+    setLocalReviews(getLocalReviews());
+    setEligibleProjects(getReviewEligibleProjects());
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -187,36 +276,71 @@ export default function Reviews() {
       }
     };
     load();
+    window.addEventListener("projectCompleted", refreshEligibility);
+    window.addEventListener("reviewSubmitted", refreshEligibility);
+    return () => {
+      window.removeEventListener("projectCompleted", refreshEligibility);
+      window.removeEventListener("reviewSubmitted", refreshEligibility);
+    };
   }, []);
 
-  const isUsingDemoData = dbReviews.length === 0;
-  const allReviews = !isUsingDemoData ? dbReviews : DEMO_REVIEWS;
+  const isUsingDemoData = dbReviews.length === 0 && localReviews.length === 0;
+  const mergedRealReviews = [...localReviews, ...dbReviews].filter((review, index, reviews) => {
+    const key = review.project_id && review.professional_bid_id
+      ? `${review.project_id}:${review.professional_bid_id}`
+      : review.id;
+    return reviews.findIndex((item) => {
+      const itemKey = item.project_id && item.professional_bid_id
+        ? `${item.project_id}:${item.professional_bid_id}`
+        : item.id;
+      return itemKey === key;
+    }) === index;
+  });
+  const allReviews = isUsingDemoData ? DEMO_REVIEWS : mergedRealReviews;
   const allProfessionals = dbProfessionals.length > 0 ? dbProfessionals : DEMO_PROFESSIONALS;
+  const reviewableTransactions = eligibleProjects.filter((item) => !item.alreadyReviewed);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const selected = reviewableTransactions.find((item) => `${item.project.id}:${item.bid.id}` === form.transaction_id);
+    if (!selected) return toast.error("Reviews are only available after a completed project.");
     if (!form.rating) return toast.error("Please select an overall star rating.");
-    if (form.comment.trim().length < 30) return toast.error("Please write at least 30 characters — detailed feedback helps everyone.");
+    if (form.feedback_tags.length === 0) return toast.error("Please choose at least one structured feedback tag.");
+    if (form.comment.trim().length > 240) return toast.error("Please keep review comments under 240 characters for MVP moderation.");
 
     setSubmitting(true);
     const payload = {
-      ...form,
-      verified: false,
+      reviewer_name: "Verified client",
+      reviewer_company: "",
+      rating: form.rating,
+      comment: form.comment.trim(),
+      feedback_tags: form.feedback_tags,
+      would_rehire: form.feedback_tags.includes("Would hire again"),
+      verified: true,
       review_type: "client_to_professional",
+      review_source: "completed_project",
+      project_id: selected.project.id,
+      project_title: selected.project.title,
+      professional_bid_id: selected.bid.id,
+      professional_id: selected.bid.bidder_profile_id || selected.bid.bidder_id || selected.bid.id,
+      professional_name: selected.bid.bidder_name || selected.project.awarded_bidder_name || "Selected professional",
+      service_type: selected.project.category?.replace("_", " ") || selected.bid.project_category || "",
     };
-    // Remove zero sub-ratings (not set)
-    ["communication_rating","technical_rating","professionalism_rating","value_rating"].forEach(k => {
-      if (!payload[k]) delete payload[k];
-    });
 
-    const saved = await base44.entities.Review.create(payload);
-    setDbReviews(prev => [saved, ...prev]);
-    toast.success("Review submitted — thank you for your feedback!");
+    let saved = saveLocalReview(payload);
+    try {
+      saved = await base44.entities.Review.create(payload);
+      setDbReviews(prev => [saved, ...prev]);
+    } catch {
+      // Local verified review is enough for MVP validation if backend is unavailable.
+    }
+    setLocalReviews(getLocalReviews());
+    toast.success("Verified completed-project review submitted.");
     setShowForm(false);
     setForm({
       reviewer_name: "", reviewer_company: "", rating: 0,
       communication_rating: 0, technical_rating: 0, professionalism_rating: 0, value_rating: 0,
-      comment: "", service_type: "", professional_id: "", would_rehire: true,
+      comment: "", service_type: "", professional_id: "", transaction_id: "", feedback_tags: [], would_rehire: true,
     });
     setSubmitting(false);
   };
@@ -237,11 +361,15 @@ export default function Reviews() {
               <p className="text-xs font-semibold text-primary uppercase tracking-widest mb-2">Marketplace Trust</p>
               <h1 className="text-3xl sm:text-4xl font-extrabold text-foreground tracking-tight">Reviews & Reputation</h1>
               <p className="mt-2 text-muted-foreground max-w-xl">
-                Verified client feedback on tax and accounting professionals. Detailed reviews drive trust, ranking and AI recommendations on the platform.
+                Verified completed-project feedback only. Reviews are transaction-based trust signals, not open public comments.
               </p>
             </div>
-            <Button onClick={() => setShowForm(!showForm)} className="rounded-xl font-semibold gap-2 shrink-0">
-              {showForm ? <><X className="h-4 w-4" />Cancel</> : <><Plus className="h-4 w-4" />Leave a Review</>}
+            <Button
+              onClick={() => setShowForm(!showForm)}
+              disabled={reviewableTransactions.length === 0}
+              className="rounded-xl font-semibold gap-2 shrink-0"
+            >
+              {showForm ? <><X className="h-4 w-4" />Cancel</> : <><Plus className="h-4 w-4" />Review Completed Project</>}
             </Button>
           </div>
 
@@ -258,7 +386,7 @@ export default function Reviews() {
               { label: "Total Reviews", value: allReviews.length, icon: MessageSquare, color: "text-primary" },
               { label: "Average Rating", value: `${avgRating} ★`, icon: Star, color: "text-amber-500" },
               { label: "Verified Reviews", value: verifiedCount, icon: CheckCircle2, color: "text-emerald-500" },
-              { label: "Detailed Reviews", value: withSubRatings, icon: Award, color: "text-violet-500" },
+              { label: "Completed Reviews", value: allReviews.filter(r => r.review_source === "completed_project" || r.verified).length, icon: Award, color: "text-violet-500" },
             ].map(s => (
               <div key={s.label} className="flex items-center gap-3 px-5 py-3 rounded-xl bg-background border border-border/60">
                 <s.icon className={`h-5 w-5 ${s.color}`} />
@@ -273,8 +401,14 @@ export default function Reviews() {
           {/* Trust notice */}
           <div className="mt-5 flex items-start gap-2 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-700 max-w-2xl">
             <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5" />
-            <span><strong>Trust-first platform:</strong> Reviews influence professional search ranking, AI matching, shortlist priority and trust badges. Detailed written feedback carries more weight than star ratings alone.</span>
+            <span><strong>Trust-first MVP:</strong> Only completed projects can create verified reviews. Comments stay short and optional to reduce moderation risk.</span>
           </div>
+          {reviewableTransactions.length === 0 && (
+            <div className="mt-3 flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-700 max-w-2xl">
+              <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5" />
+              <span>Reviews unlock after a project is awarded and the client confirms completion.</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -293,41 +427,20 @@ export default function Reviews() {
                   <DemoNotice />
                 </div>
               )}
-              <h2 className="text-lg font-bold text-foreground mb-1">Share Your Experience</h2>
-              <p className="text-sm text-muted-foreground mb-6">Detailed reviews help professionals build reputation and help clients choose wisely. Minimum 30 characters.</p>
+              <h2 className="text-lg font-bold text-foreground mb-1">Review a Completed Project</h2>
+              <p className="text-sm text-muted-foreground mb-6">Keep it lightweight: star rating, trust tags, and an optional short comment.</p>
 
               <form onSubmit={handleSubmit} className="space-y-5">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="reviewer_name">Your Name *</Label>
-                    <Input id="reviewer_name" placeholder="Jane Smith" value={form.reviewer_name}
-                      onChange={e => setForm({ ...form, reviewer_name: e.target.value })} required />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="reviewer_company">Company (optional)</Label>
-                    <Input id="reviewer_company" placeholder="Acme Ltd" value={form.reviewer_company}
-                      onChange={e => setForm({ ...form, reviewer_company: e.target.value })} />
-                  </div>
-                </div>
-
                 <div className="space-y-1.5">
-                  <Label>Professional Reviewed</Label>
-                  <Select value={form.professional_id} onValueChange={v => setForm({ ...form, professional_id: v })}>
-                    <SelectTrigger><SelectValue placeholder="Select professional (optional)" /></SelectTrigger>
+                  <Label>Completed project *</Label>
+                  <Select value={form.transaction_id} onValueChange={v => setForm({ ...form, transaction_id: v })}>
+                    <SelectTrigger><SelectValue placeholder="Choose a completed project" /></SelectTrigger>
                     <SelectContent>
-                      {allProfessionals.map(p => (
-                        <SelectItem key={p.id} value={p.id}>{p.full_name} — {p.title}</SelectItem>
+                      {reviewableTransactions.map(({ project, bid }) => (
+                        <SelectItem key={`${project.id}:${bid.id}`} value={`${project.id}:${bid.id}`}>
+                          {project.title} — {bid.bidder_name || "Selected professional"}
+                        </SelectItem>
                       ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label>Service Type</Label>
-                  <Select value={form.service_type} onValueChange={v => setForm({ ...form, service_type: v })}>
-                    <SelectTrigger><SelectValue placeholder="What service was provided?" /></SelectTrigger>
-                    <SelectContent>
-                      {SERVICE_TYPES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -341,37 +454,41 @@ export default function Reviews() {
                   )}
                 </div>
 
-                {/* Sub-dimension ratings */}
-                <div className="space-y-3 p-4 rounded-xl bg-secondary/60 border border-border/60">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Detailed Ratings (optional but encouraged)</p>
-                  {SUB_RATINGS.map(({ key, label }) => (
-                    <SubRatingRow key={key} label={label}
-                      value={form[key]}
-                      onChange={v => setForm({ ...form, [key]: v })}
-                    />
-                  ))}
+                <div className="space-y-3">
+                  <Label>Structured feedback tags *</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {REVIEW_TAGS.map((tag) => {
+                      const selected = form.feedback_tags.includes(tag);
+                      return (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => setForm((current) => ({
+                            ...current,
+                            feedback_tags: selected
+                              ? current.feedback_tags.filter((item) => item !== tag)
+                              : [...current.feedback_tags, tag],
+                          }))}
+                          className={`px-3 py-1.5 rounded-full border text-sm font-semibold transition-colors ${
+                            selected
+                              ? "bg-primary text-primary-foreground border-primary"
+                              : "bg-card text-muted-foreground border-border hover:border-primary/40"
+                          }`}
+                        >
+                          {tag}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="comment">Your Review *</Label>
+                  <Label htmlFor="comment">Short comment (optional)</Label>
                   <Textarea id="comment"
-                    placeholder="Describe your experience — quality of work, communication, expertise, what was delivered, would you hire again?"
+                    placeholder="Optional: one or two professional sentences about the completed work."
                     value={form.comment} onChange={e => setForm({ ...form, comment: e.target.value })}
-                    className="h-32" required />
-                  <p className="text-xs text-muted-foreground">{form.comment.length} chars — aim for 100+</p>
-                </div>
-
-                {/* Would rehire */}
-                <div className="flex items-center gap-3">
-                  <button type="button"
-                    onClick={() => setForm({ ...form, would_rehire: !form.would_rehire })}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-semibold transition-all ${
-                      form.would_rehire ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-secondary border-border text-muted-foreground"
-                    }`}>
-                    <ThumbsUp className="h-4 w-4" />
-                    {form.would_rehire ? "Would hire again" : "Wouldn't hire again"}
-                  </button>
-                  <span className="text-xs text-muted-foreground">Toggle to change</span>
+                    className="h-24" maxLength={240} />
+                  <p className="text-xs text-muted-foreground">{form.comment.length}/240 chars</p>
                 </div>
 
                 <div className="space-y-2 pt-2">

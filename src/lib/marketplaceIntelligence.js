@@ -74,29 +74,293 @@ function getSeasonalityFactor(category) {
 
 // ─── Complexity Multipliers ───────────────────────────────────────────────────
 const COMPLEXITY_FACTORS = {
-  simple:  { priceMultiplier: 0.75, bidderMultiplier: 1.4, label: "Simple" },
+  simple:  { priceMultiplier: 0.75, bidderMultiplier: 1.18, label: "Simple" },
   medium:  { priceMultiplier: 1.0,  bidderMultiplier: 1.0, label: "Medium" },
-  complex: { priceMultiplier: 1.5,  bidderMultiplier: 0.65, label: "Complex" },
+  complex: { priceMultiplier: 1.62, bidderMultiplier: 0.72, label: "Complex" },
 };
 
 const URGENCY_FACTORS = {
-  flexible:     { priceMultiplier: 0.95, bidderMultiplier: 1.1 },
+  negotiable:   { priceMultiplier: 0.95, bidderMultiplier: 1.08 },
+  flexible:     { priceMultiplier: 0.95, bidderMultiplier: 1.08 },
+  standard:     { priceMultiplier: 1.0,  bidderMultiplier: 1.0 },
   within_month: { priceMultiplier: 1.0,  bidderMultiplier: 1.0 },
-  urgent:       { priceMultiplier: 1.3,  bidderMultiplier: 0.8, note: "Urgent projects attract fewer bids but at higher rates" },
+  within_2weeks:{ priceMultiplier: 1.18, bidderMultiplier: 0.88 },
+  within_week:  { priceMultiplier: 1.35, bidderMultiplier: 0.76 },
+  urgent:       { priceMultiplier: 1.35, bidderMultiplier: 0.76, note: "Urgent projects attract fewer bids but at higher rates" },
+  asap:         { priceMultiplier: 1.55, bidderMultiplier: 0.64, note: "ASAP projects attract fewer bids but at premium rates" },
 };
+
+const URGENCY_BUCKETS = {
+  negotiable: "negotiable",
+  flexible: "negotiable",
+  standard: "standard",
+  within_month: "standard",
+  within_2weeks: "standard",
+  within_week: "urgent",
+  urgent: "urgent",
+  asap: "asap",
+};
+
+const COMPLEXITY_URGENCY_MATRIX = {
+  simple: {
+    negotiable: {
+      interestScore: 90,
+      volume: [8, 16],
+      qualityScore: 48,
+      response: "< 2 hours",
+      pricingPressure: 30,
+      activity: "Broad high-volume interest",
+      summary: "Very high bidder interest - simple scope and negotiable timing make this easy to schedule and low risk.",
+      bidderType: "Broad bidder pool",
+    },
+    standard: {
+      interestScore: 82,
+      volume: [6, 12],
+      qualityScore: 50,
+      response: "2-6 hours",
+      pricingPressure: 38,
+      activity: "Healthy broad competition",
+      summary: "High interest - simple work with a reasonable deadline attracts many eligible professionals.",
+      bidderType: "Cost-effective qualified bidders",
+    },
+    urgent: {
+      interestScore: 68,
+      volume: [4, 8],
+      qualityScore: 54,
+      response: "2-6 hours",
+      pricingPressure: 54,
+      activity: "Fast broad response",
+      summary: "Moderate to high interest - low complexity keeps the pool broad, with a modest urgency premium.",
+      bidderType: "Fast-turnaround generalists",
+    },
+    asap: {
+      interestScore: 58,
+      volume: [3, 7],
+      qualityScore: 52,
+      response: "< 2 hours",
+      pricingPressure: 62,
+      activity: "Immediate but price-sensitive",
+      summary: "Moderate interest - simple work is accessible, but ASAP pressure reduces comfort and adds a premium.",
+      bidderType: "Available fast-response bidders",
+    },
+  },
+  medium: {
+    negotiable: {
+      interestScore: 76,
+      volume: [5, 10],
+      qualityScore: 62,
+      response: "2-6 hours",
+      pricingPressure: 42,
+      activity: "Comfortable healthy interest",
+      summary: "High interest - meaningful work with flexible timing is easy for professionals to plan.",
+      bidderType: "Qualified mid-level professionals",
+    },
+    standard: {
+      interestScore: 78,
+      volume: [6, 12],
+      qualityScore: 68,
+      response: "2-6 hours",
+      pricingPressure: 55,
+      activity: "Healthy competition",
+      summary: "High interest - this is the healthiest marketplace pattern.",
+      bidderType: "Qualified professionals",
+    },
+    urgent: {
+      interestScore: 62,
+      volume: [3, 7],
+      qualityScore: 76,
+      response: "< 2 hours",
+      pricingPressure: 72,
+      activity: "Selective premium response",
+      summary: "Moderate interest - urgency narrows the pool, but remaining bidders tend to be experienced.",
+      bidderType: "Experienced professionals",
+    },
+    asap: {
+      interestScore: 48,
+      volume: [2, 5],
+      qualityScore: 82,
+      response: "< 2 hours",
+      pricingPressure: 86,
+      activity: "Premium rush",
+      summary: "Lower bidder volume - ASAP pressure filters for senior fast-response professionals.",
+      bidderType: "Senior fast-response professionals",
+    },
+  },
+  complex: {
+    negotiable: {
+      interestScore: 54,
+      volume: [2, 6],
+      qualityScore: 82,
+      response: "6-24 hours",
+      pricingPressure: 62,
+      activity: "Selective specialist",
+      summary: "Moderate specialist interest - flexible timing helps, but complexity keeps the pool smaller.",
+      bidderType: "Senior specialists",
+    },
+    standard: {
+      interestScore: 48,
+      volume: [2, 5],
+      qualityScore: 88,
+      response: "2-6 hours",
+      pricingPressure: 76,
+      activity: "Specialist selective demand",
+      summary: "Moderate interest - complex work attracts specialists, not broad bidder volume.",
+      bidderType: "Senior tax/accounting specialists",
+    },
+    urgent: {
+      interestScore: 34,
+      volume: [1, 4],
+      qualityScore: 92,
+      response: "< 2 hours",
+      pricingPressure: 90,
+      activity: "Premium specialist demand",
+      summary: "Low bidder volume - urgent complex work needs senior specialists and commands premium pricing.",
+      bidderType: "Senior specialists",
+    },
+    asap: {
+      interestScore: 24,
+      volume: [0, 3],
+      qualityScore: 96,
+      response: "< 2 hours",
+      pricingPressure: 98,
+      activity: "Scarce premium capacity",
+      summary: "Very low bidder volume but very high-value senior specialist bids.",
+      bidderType: "Scarce senior specialists",
+    },
+  },
+};
+
+const BIDDING_WINDOW_FACTORS = {
+  "24h": { days: 1, bidderMultiplier: 0.92, label: "24 hours" },
+  "3d":  { days: 3, bidderMultiplier: 0.96, label: "3 days" },
+  "5d":  { days: 5, bidderMultiplier: 0.99, label: "5 days" },
+  "7d":  { days: 7, bidderMultiplier: 1.0,  label: "7 days" },
+  "10d": { days: 10, bidderMultiplier: 1.03, label: "10 days" },
+};
+
+const WORKLOAD_FACTORS = {
+  light: { priceMultiplier: 0.85, bidderMultiplier: 1.1, label: "Light workload" },
+  standard: { priceMultiplier: 1.0, bidderMultiplier: 1.0, label: "Standard workload" },
+  heavy: { priceMultiplier: 1.32, bidderMultiplier: 0.82, label: "Heavy workload" },
+  specialist: { priceMultiplier: 1.62, bidderMultiplier: 0.64, label: "Specialist workload" },
+};
+
+const round50 = (n) => Math.max(50, Math.round(n / 50) * 50);
+
+function normalizeBiddingDays(biddingPeriod, biddingDeadline) {
+  if (BIDDING_WINDOW_FACTORS[biddingPeriod]) return BIDDING_WINDOW_FACTORS[biddingPeriod].days;
+  if (biddingDeadline) {
+    const days = Math.ceil((new Date(biddingDeadline).getTime() - Date.now()) / 86400000);
+    if (Number.isFinite(days) && days > 0) return days;
+  }
+  return 7;
+}
+
+function getBiddingWindowFactor(days) {
+  if (days <= 1) return 0.92;
+  if (days <= 3) return 0.96;
+  if (days <= 5) return 0.99;
+  if (days <= 7) return 1.0;
+  if (days <= 10) return 1.03;
+  return 1.04;
+}
+
+function inferWorkload({ estimatedWorkload, missingRecords, multipleIncomeSources, internationalTaxIssues, complexity }) {
+  if (estimatedWorkload) return estimatedWorkload;
+  if (internationalTaxIssues || complexity === "complex") return "specialist";
+  if (missingRecords || multipleIncomeSources) return "heavy";
+  if (complexity === "simple") return "light";
+  return "standard";
+}
+
+function getConditionFactors({
+  remote = true,
+  missingRecords = false,
+  multipleIncomeSources = false,
+  internationalTaxIssues = false,
+  estimatedWorkload,
+  complexity = "medium",
+}) {
+  const workload = inferWorkload({ estimatedWorkload, missingRecords, multipleIncomeSources, internationalTaxIssues, complexity });
+  const wf = WORKLOAD_FACTORS[workload] || WORKLOAD_FACTORS.standard;
+  const factors = [];
+  let priceMultiplier = wf.priceMultiplier;
+  let bidderMultiplier = wf.bidderMultiplier;
+  let qualityMultiplier = 1;
+
+  if (remote) {
+    bidderMultiplier *= 1.25;
+    factors.push({ type: "positive", text: "Remote delivery increases professional reach and expected bidder volume." });
+  } else {
+    priceMultiplier *= 1.12;
+    bidderMultiplier *= 0.72;
+    factors.push({ type: "warning", text: "On-site work narrows the bidder pool and usually increases pricing." });
+  }
+
+  if (missingRecords) {
+    priceMultiplier *= 1.15;
+    bidderMultiplier *= 0.86;
+    factors.push({ type: "warning", text: "Missing records increase preparation time and reduce bidder volume." });
+  }
+  if (multipleIncomeSources) {
+    priceMultiplier *= 1.12;
+    bidderMultiplier *= 0.9;
+    qualityMultiplier *= 1.06;
+    factors.push({ type: "neutral", text: "Multiple income sources increase scope and favour more experienced bidders." });
+  }
+  if (internationalTaxIssues) {
+    priceMultiplier *= 1.32;
+    bidderMultiplier *= 0.72;
+    qualityMultiplier *= 1.14;
+    factors.push({ type: "warning", text: "International tax issues require specialist expertise, raising pricing and reducing bidder volume." });
+  }
+
+  return { priceMultiplier, bidderMultiplier, qualityMultiplier, workload, workloadLabel: wf.label, factors };
+}
+
+function normalizeUrgency(urgency) {
+  if (urgency === "flexible") return "negotiable";
+  if (urgency === "within_month" || urgency === "within_2weeks") return "standard";
+  if (urgency === "within_week") return "urgent";
+  return urgency;
+}
+
+function getUrgencyBucket(urgency) {
+  return URGENCY_BUCKETS[normalizeUrgency(urgency)] || "standard";
+}
+
+function getMatrixOutcome(complexity = "medium", urgency = "negotiable") {
+  const normalizedComplexity = COMPLEXITY_URGENCY_MATRIX[complexity] ? complexity : "medium";
+  const bucket = getUrgencyBucket(urgency);
+  return {
+    complexity: normalizedComplexity,
+    urgencyBucket: bucket,
+    ...COMPLEXITY_URGENCY_MATRIX[normalizedComplexity][bucket],
+  };
+}
+
+function getRecommendedBiddingDuration({ complexity = "medium", urgency = "negotiable", internationalTaxIssues = false, missingRecords = false }) {
+  const normalizedUrgency = normalizeUrgency(urgency);
+  if (normalizedUrgency === "asap") return { min: 1, max: 3, label: "1-3 days" };
+  if (normalizedUrgency === "urgent") return { min: 3, max: 5, label: "3-5 days" };
+  if (internationalTaxIssues || complexity === "complex") return { min: 7, max: 10, label: "7-10 days" };
+  if (missingRecords) return { min: 5, max: 7, label: "5-7 days" };
+  return { min: 5, max: 7, label: "5-7 days" };
+}
 
 // ─── Core Fair Market Range Calculator ───────────────────────────────────────
 
-export function computeFairMarketRange(category, complexity = "medium", urgency = "flexible") {
+export function computeFairMarketRange(category, complexity = "medium", urgency = "negotiable", options = {}) {
+  const normalizedUrgency = normalizeUrgency(urgency);
   const base = FAIR_MARKET_PRICES[category] || FAIR_MARKET_PRICES.other;
   const cf = COMPLEXITY_FACTORS[complexity] || COMPLEXITY_FACTORS.medium;
-  const uf = URGENCY_FACTORS[urgency] || URGENCY_FACTORS.flexible;
+  const uf = URGENCY_FACTORS[normalizedUrgency] || URGENCY_FACTORS.negotiable;
   const seasonality = getSeasonalityFactor(category);
   const sd = SUPPLY_DEMAND[category] || SUPPLY_DEMAND.other;
+  const condition = getConditionFactors({ ...options, complexity });
 
-  const totalMultiplier = cf.priceMultiplier * uf.priceMultiplier * seasonality.factor;
+  const totalMultiplier = cf.priceMultiplier * uf.priceMultiplier * seasonality.factor * condition.priceMultiplier;
 
-  const round50 = (n) => Math.round(n / 50) * 50;
   const adjustedMin = round50(base.min * totalMultiplier);
   const adjustedMax = round50(base.max * totalMultiplier);
   const midpoint = round50((adjustedMin + adjustedMax) / 2);
@@ -114,6 +378,216 @@ export function computeFairMarketRange(category, complexity = "medium", urgency 
     pricingPressure,
     supplyDemand: sd,
     label: base.label,
+    condition,
+    recommendedBudget: {
+      min: adjustedMin,
+      max: adjustedMax,
+      midpoint,
+    },
+  };
+}
+
+export function scoreMarketplaceProject({
+  category,
+  complexity = "medium",
+  urgency = "negotiable",
+  biddingPeriod,
+  biddingDeadline,
+  budgetAmount,
+  remote = true,
+  missingRecords = false,
+  multipleIncomeSources = false,
+  internationalTaxIssues = false,
+  estimatedWorkload,
+  deadlinePressure,
+  hasDescription = true,
+  descriptionLength = 200,
+  hasDeadline = false,
+  requiresTopQual = false,
+} = {}) {
+  const biddingDays = normalizeBiddingDays(biddingPeriod, biddingDeadline);
+  const normalizedUrgency = normalizeUrgency(urgency);
+  const biddingWindowMultiplier = getBiddingWindowFactor(biddingDays);
+  const recommendedBiddingDuration = getRecommendedBiddingDuration({ complexity, urgency: normalizedUrgency, internationalTaxIssues, missingRecords });
+  const marketRange = computeFairMarketRange(category, complexity, normalizedUrgency, {
+    remote,
+    missingRecords,
+    multipleIncomeSources,
+    internationalTaxIssues,
+    estimatedWorkload,
+  });
+  const sd = SUPPLY_DEMAND[category] || SUPPLY_DEMAND.other;
+  const condition = marketRange.condition;
+  const matrix = getMatrixOutcome(complexity, normalizedUrgency);
+  const pressure = deadlinePressure || (normalizedUrgency === "asap" ? "critical" : normalizedUrgency === "urgent" ? "high" : "normal");
+  const pressurePriceMultiplier = pressure === "critical" ? 1.18 : pressure === "high" ? 1.1 : 1;
+  const pressureBidderMultiplier = pressure === "critical" ? 0.9 : pressure === "high" ? 0.95 : 1;
+  marketRange.min = round50(marketRange.min * pressurePriceMultiplier);
+  marketRange.max = round50(marketRange.max * pressurePriceMultiplier);
+  marketRange.midpoint = round50(marketRange.midpoint * pressurePriceMultiplier);
+  marketRange.recommendedBudget = {
+    min: marketRange.min,
+    max: marketRange.max,
+    midpoint: marketRange.midpoint,
+  };
+
+  let budgetScore = 58;
+  let budgetHealthLabel = "No budget set";
+  let budgetHealthLevel = "neutral";
+  let budgetSuggestion = null;
+  const budgetRatio = budgetAmount && budgetAmount > 0 ? budgetAmount / marketRange.midpoint : null;
+
+  if (budgetRatio) {
+    if (budgetRatio >= 1.2) {
+      budgetScore = 96;
+      budgetHealthLabel = "Premium budget";
+      budgetHealthLevel = "good";
+    } else if (budgetRatio >= 0.95) {
+      budgetScore = 88;
+      budgetHealthLabel = "Fair market rate";
+      budgetHealthLevel = "good";
+    } else if (budgetRatio >= 0.78) {
+      budgetScore = 70;
+      budgetHealthLabel = "Slightly below market";
+      budgetHealthLevel = "neutral";
+      budgetSuggestion = `Budget may be slightly low for selected complexity. Consider £${marketRange.midpoint.toLocaleString()} as a stronger target.`;
+    } else if (budgetRatio >= 0.58) {
+      budgetScore = 45;
+      budgetHealthLabel = "Below market rate";
+      budgetHealthLevel = "warning";
+      budgetSuggestion = `Budget may be too low for selected complexity. Recommended range: £${marketRange.min.toLocaleString()}-${marketRange.max.toLocaleString()}.`;
+    } else if (budgetRatio >= 0.38) {
+      budgetScore = 22;
+      budgetHealthLabel = "Significantly below market";
+      budgetHealthLevel = "danger";
+      budgetSuggestion = `Budget is significantly below the recommended range of £${marketRange.min.toLocaleString()}-${marketRange.max.toLocaleString()}.`;
+    } else {
+      budgetScore = 6;
+      budgetHealthLabel = "Critical underprice";
+      budgetHealthLevel = "danger";
+      budgetSuggestion = `Budget is far below market expectations for this project. Recommended range: £${marketRange.min.toLocaleString()}-${marketRange.max.toLocaleString()}.`;
+    }
+  }
+
+  const clarityScore = hasDescription ? Math.min(12, Math.max(-8, (descriptionLength - 120) / 28)) : -12;
+  const baseDemand = sd.supply * 0.45 + sd.demand * 0.55;
+  const isDifficult = complexity === "complex" || condition.workload === "specialist" || internationalTaxIssues;
+  const isPressured = matrix.urgencyBucket === "urgent" || matrix.urgencyBucket === "asap" || pressure !== "normal";
+  const lowBudgetForDifficultWork = Boolean(budgetRatio && budgetRatio < 0.78 && isDifficult && isPressured);
+  const premiumBudget = Boolean(budgetRatio && budgetRatio >= 1.15);
+  const fairBudget = Boolean(budgetRatio && budgetRatio >= 0.95 && budgetRatio < 1.15);
+  const budgetAdjustment = Math.max(-28, Math.min(24, (budgetScore - 70) * 0.55));
+  const budgetComplexityAdjustment =
+    lowBudgetForDifficultWork ? -18 :
+    premiumBudget && isDifficult ? 14 :
+    premiumBudget ? 9 :
+    fairBudget && isPressured ? 5 :
+    0;
+  const marketAdjustment = Math.max(-6, Math.min(6, (baseDemand - 70) / 5));
+  const conditionAdjustment = Math.max(-12, Math.min(8, (condition.bidderMultiplier - 1) * 20));
+  const biddingWindowAdjustment = Math.max(-4, Math.min(3, (biddingWindowMultiplier - 1) * 20));
+  const pressureAdjustment = Math.max(-8, Math.min(2, (pressureBidderMultiplier - 1) * 25));
+  const qualificationPenalty = requiresTopQual ? 6 : 0;
+  const interestScore = Math.round(Math.min(100, Math.max(2,
+    matrix.interestScore
+    + clarityScore
+    + budgetAdjustment
+    + budgetComplexityAdjustment
+    + marketAdjustment
+    + conditionAdjustment
+    + biddingWindowAdjustment
+    + pressureAdjustment
+    - qualificationPenalty
+  )));
+
+  const volumeMultiplier = Math.max(0.35, Math.min(1.55,
+    (0.48 + (budgetScore / 145))
+    * (hasDescription ? 1 : 0.75)
+    * (0.96 + ((biddingWindowMultiplier - 1) * 0.35))
+    * (remote ? 1.08 : 0.82)
+    * (requiresTopQual ? 0.82 : 1)
+    * (lowBudgetForDifficultWork ? 0.62 : 1)
+    * (premiumBudget && isDifficult ? 1.18 : premiumBudget ? 1.1 : 1)
+  ));
+  const [matrixMin, matrixMax] = matrix.volume;
+  const expectedMin = Math.max(0, Math.floor(matrixMin * volumeMultiplier));
+  const expectedMax = Math.max(expectedMin + 1, Math.ceil(matrixMax * volumeMultiplier));
+  const seniorityScore = Math.min(100, Math.round((matrix.qualityScore * 0.45) + (budgetScore * 0.4) + (condition.qualityMultiplier * 15)));
+  const bidQuality = seniorityScore >= 88 ? "Senior specialists" : seniorityScore >= 72 ? "Experienced professionals" : seniorityScore >= 56 ? "Qualified professionals" : "Mixed experience";
+  const hoursToFirstBid =
+    budgetScore >= 88 && interestScore >= 46 ? "< 2 hours" :
+    lowBudgetForDifficultWork ? "24+ hours" :
+    budgetScore >= 70 && interestScore >= 40 ? "2-6 hours" :
+    interestScore >= 35 ? "6-24 hours" :
+    "24+ hours";
+
+  const interestLevel = interestScore >= 82 ? "Very High" : interestScore >= 66 ? "High" : interestScore >= 46 ? "Medium" : interestScore >= 30 ? "Low" : "Very Low";
+  const interestColor = interestScore >= 58 ? "emerald" : interestScore >= 22 ? "amber" : "rose";
+  const qualityLabel = matrix.summary;
+  const pricingPressureScore = Math.min(100, Math.max(5, Math.round(
+    matrix.pricingPressure
+    + ((100 - budgetScore) * 0.25)
+    + (pressure === "critical" ? 10 : pressure === "high" ? 5 : 0)
+    + (condition.priceMultiplier - 1) * 18
+  )));
+  const pricingPressureLevel = pricingPressureScore >= 85 ? "Extreme" : pricingPressureScore >= 70 ? "High" : pricingPressureScore >= 50 ? "Moderate" : "Low";
+
+  const recommendations = [
+    budgetSuggestion && { type: budgetHealthLevel === "danger" ? "danger" : "warning", text: budgetSuggestion },
+    lowBudgetForDifficultWork && { type: "danger", text: "This budget may be too low for an urgent complex project." },
+    premiumBudget && { type: "positive", text: "Higher starting budgets usually attract more experienced professionals." },
+    fairBudget && { type: "positive", text: "Competitive pricing may improve bidder response speed." },
+    biddingDays < recommendedBiddingDuration.min && { type: "warning", text: `Recommended bidding duration: ${recommendedBiddingDuration.label}. Short windows reduce bidder volume.` },
+    complexity === "complex" && { type: "neutral", text: "High complexity projects usually receive fewer but higher quality bids." },
+    (normalizedUrgency === "urgent" || normalizedUrgency === "asap") && { type: "warning", text: "Urgent projects increase expected pricing and reduce available bidder volume." },
+    pressure !== "normal" && { type: "warning", text: "Deadline pressure increases expected pricing and reduces available bidder volume." },
+    matrix.urgencyBucket === "asap" && complexity === "complex" && { type: "warning", text: "Complex ASAP projects usually receive very few bids, but those bids are senior and premium-priced." },
+    matrix.urgencyBucket === "standard" && complexity === "medium" && { type: "positive", text: "Medium complexity with standard urgency often attracts the healthiest competition." },
+    matrix.urgencyBucket === "negotiable" && { type: "positive", text: "Negotiable timelines improve bidder comfort and increase willingness to bid." },
+    remote && { type: "positive", text: "Remote delivery expands reach and improves expected bidder volume." },
+    ...condition.factors,
+  ].filter(Boolean);
+
+  return {
+    interestLevel,
+    interestColor,
+    qualityLabel,
+    expectedMin,
+    expectedMax,
+    expectedBids: { min: expectedMin, max: expectedMax },
+    budgetScore,
+    interestScore,
+    budgetHealthLabel,
+    budgetHealthLevel,
+    budgetSuggestion,
+    hoursToFirstBid,
+    estimatedResponseSpeed: hoursToFirstBid,
+    bidQuality,
+    expectedBidQuality: bidQuality,
+    expectedBidderType: matrix.bidderType,
+    marketActivityLevel: matrix.activity,
+    pricingPressureScore,
+    pricingPressureLevel,
+    marketRange,
+    recommendedBudgetRange: marketRange.recommendedBudget,
+    recommendedBiddingDuration,
+    biddingDays,
+    rawScore: interestScore,
+    recommendations,
+    signals: {
+      baseDemand: Math.round(baseDemand),
+      matrix,
+      biddingWindowMultiplier,
+      remote,
+      workload: condition.workload,
+      workloadLabel: condition.workloadLabel,
+      conditionPriceMultiplier: Math.round(condition.priceMultiplier * 100) / 100,
+      conditionBidderMultiplier: Math.round(condition.bidderMultiplier * 100) / 100,
+      deadlinePressure: pressure,
+      budgetRatio: budgetRatio ? Math.round(budgetRatio * 100) / 100 : null,
+      lowBudgetForDifficultWork,
+      premiumBudget,
+    },
   };
 }
 
@@ -125,126 +599,39 @@ export function computeFairMarketRange(category, complexity = "medium", urgency 
 export function predictBidderInterest({
   category,
   complexity = "medium",
-  urgency = "flexible",
+  urgency = "negotiable",
+  biddingPeriod,
+  biddingDeadline,
   budgetAmount,
+  remote = true,
+  missingRecords = false,
+  multipleIncomeSources = false,
+  internationalTaxIssues = false,
+  estimatedWorkload,
+  deadlinePressure,
   hasDescription = true,
   descriptionLength = 200,
   hasDeadline = false,
   requiresTopQual = false,
 }) {
-  const marketRange = computeFairMarketRange(category, complexity, urgency);
-  const sd = SUPPLY_DEMAND[category] || SUPPLY_DEMAND.other;
-  const cf = COMPLEXITY_FACTORS[complexity] || COMPLEXITY_FACTORS.medium;
-  const uf = URGENCY_FACTORS[urgency] || URGENCY_FACTORS.flexible;
-
-  // Base interest from supply level (0–100 → interest in professionals)
-  let baseInterest = sd.supply * 0.12; // ~0–12
-
-  // Budget attractiveness: how close is the budget to fair market?
-  let budgetScore = 50; // neutral if no budget
-  let budgetHealthLabel = "Unknown";
-  let budgetHealthLevel = "neutral"; // good | warning | danger
-  let budgetSuggestion = null;
-
-  if (budgetAmount && budgetAmount > 0) {
-    const ratio = budgetAmount / marketRange.midpoint;
-
-    if (ratio >= 1.15) {
-      budgetScore = 95;
-      budgetHealthLabel = "Premium budget";
-      budgetHealthLevel = "good";
-    } else if (ratio >= 0.9) {
-      budgetScore = 85;
-      budgetHealthLabel = "Fair market rate";
-      budgetHealthLevel = "good";
-    } else if (ratio >= 0.75) {
-      budgetScore = 68;
-      budgetHealthLabel = "Slightly below market";
-      budgetHealthLevel = "neutral";
-      budgetSuggestion = `Consider raising to £${marketRange.midpoint.toLocaleString()} to attract more bids.`;
-    } else if (ratio >= 0.55) {
-      budgetScore = 40;
-      budgetHealthLabel = "Below market rate";
-      budgetHealthLevel = "warning";
-      budgetSuggestion = `Your budget is below the typical market range of £${marketRange.min.toLocaleString()}–£${marketRange.max.toLocaleString()}. You may receive fewer qualified bids.`;
-    } else if (ratio >= 0.35) {
-      budgetScore = 18;
-      budgetHealthLabel = "Significantly below market";
-      budgetHealthLevel = "danger";
-      budgetSuggestion = `Your budget is significantly below what qualified professionals typically charge (£${marketRange.min.toLocaleString()}–£${marketRange.max.toLocaleString()}). Strongly consider revising upward.`;
-    } else {
-      budgetScore = 5;
-      budgetHealthLabel = "Critical underprice";
-      budgetHealthLevel = "danger";
-      budgetSuggestion = `Budget is far below market expectations. Professionals are unlikely to bid. Market range is £${marketRange.min.toLocaleString()}–£${marketRange.max.toLocaleString()}.`;
-    }
-  }
-
-  // Project quality signals
-  const descScore = descriptionLength > 300 ? 20 : descriptionLength > 150 ? 15 : descriptionLength > 60 ? 8 : 3;
-  const deadlineBonus = hasDeadline ? 5 : 0;
-  const qualPenalty = requiresTopQual ? -8 : 0; // fewer can qualify
-
-  // Complexity: complex projects attract fewer but higher-quality bids
-  const complexityBidderFactor = cf.bidderMultiplier;
-  const urgencyBidderFactor = uf.bidderMultiplier;
-
-  // Raw interest score
-  const rawScore = (baseInterest * (budgetScore / 100)) + descScore + deadlineBonus + qualPenalty;
-  const adjustedScore = rawScore * complexityBidderFactor * urgencyBidderFactor * marketRange.seasonality.factor;
-
-  // Translate score to expected bidder range
-  let expectedMin, expectedMax, interestLevel, interestColor, qualityLabel;
-
-  const s = Math.max(0, adjustedScore);
-
-  if (s >= 9) {
-    expectedMin = 10; expectedMax = 18;
-    interestLevel = "Very High"; interestColor = "emerald";
-    qualityLabel = "Excellent bidder interest expected";
-  } else if (s >= 6) {
-    expectedMin = 6; expectedMax = 12;
-    interestLevel = "High"; interestColor = "emerald";
-    qualityLabel = "Strong bidder interest expected";
-  } else if (s >= 4) {
-    expectedMin = 4; expectedMax = 8;
-    interestLevel = "Moderate"; interestColor = "amber";
-    qualityLabel = "Good number of bids expected";
-  } else if (s >= 2.5) {
-    expectedMin = 2; expectedMax = 5;
-    interestLevel = "Low"; interestColor = "amber";
-    qualityLabel = "Limited bidder interest — consider adjusting budget";
-  } else if (s >= 1) {
-    expectedMin = 1; expectedMax = 3;
-    interestLevel = "Very Low"; interestColor = "rose";
-    qualityLabel = "Few bids expected — budget may need revision";
-  } else {
-    expectedMin = 0; expectedMax = 1;
-    interestLevel = "Critical"; interestColor = "rose";
-    qualityLabel = "Project unlikely to attract qualified bids at this budget";
-  }
-
-  // Time to first bid estimate
-  const hoursToFirstBid = budgetScore >= 80 ? "< 2 hours" : budgetScore >= 60 ? "2–6 hours" : budgetScore >= 40 ? "6–24 hours" : "24+ hours";
-
-  // Quality of expected bids
-  const bidQuality = budgetScore >= 80 ? "Senior specialists" : budgetScore >= 60 ? "Qualified professionals" : budgetScore >= 40 ? "Mixed experience" : "Entry-level or less qualified";
-
-  return {
-    interestLevel,
-    interestColor,
-    qualityLabel,
-    expectedMin,
-    expectedMax,
-    budgetScore,
-    budgetHealthLabel,
-    budgetHealthLevel,
-    budgetSuggestion,
-    hoursToFirstBid,
-    bidQuality,
-    marketRange,
-    rawScore: Math.round(s * 10) / 10,
-  };
+  return scoreMarketplaceProject({
+    category,
+    complexity,
+    urgency,
+    biddingPeriod,
+    biddingDeadline,
+    budgetAmount,
+    remote,
+    missingRecords,
+    multipleIncomeSources,
+    internationalTaxIssues,
+    estimatedWorkload,
+    deadlinePressure,
+    hasDescription,
+    descriptionLength,
+    hasDeadline,
+    requiresTopQual,
+  });
 }
 
 // ─── Professional Bid Health Check ───────────────────────────────────────────
@@ -252,11 +639,30 @@ export function predictBidderInterest({
  * Analyses a professional's bid amount against market norms.
  * Enforces fair pricing — warns against destructive underpricing.
  */
-export function analyseBidHealth({ amount, category, budgetAmount, complexity = "medium" }) {
+export function analyseBidHealth({
+  amount,
+  category,
+  budgetAmount,
+  complexity = "medium",
+  urgency = "negotiable",
+  remote = true,
+  missingRecords = false,
+  multipleIncomeSources = false,
+  internationalTaxIssues = false,
+  estimatedWorkload,
+  deadlinePressure,
+}) {
   if (!amount || Number(amount) <= 0) return null;
 
   const bid = Number(amount);
-  const marketRange = computeFairMarketRange(category, complexity);
+  const marketRange = computeFairMarketRange(category, complexity, urgency, {
+    remote,
+    missingRecords,
+    multipleIncomeSources,
+    internationalTaxIssues,
+    estimatedWorkload,
+    deadlinePressure,
+  });
 
   let healthLevel = "good";
   let healthLabel = "Market rate bid";
@@ -326,12 +732,37 @@ export function analyseBidHealth({ amount, category, budgetAmount, complexity = 
  * Professionals see: bidder count, experience level, demand score.
  * They do NOT see: exact prices, proposal text.
  */
-export function getCompetitionIntelligence({ bidCount = 0, category, budgetAmount }) {
+export function getCompetitionIntelligence({
+  bidCount = 0,
+  category,
+  budgetAmount,
+  complexity = "medium",
+  urgency = "negotiable",
+  biddingPeriod,
+  remote = true,
+  missingRecords = false,
+  multipleIncomeSources = false,
+  internationalTaxIssues = false,
+  estimatedWorkload,
+  deadlinePressure,
+}) {
   const count = Math.max(0, bidCount);
-  const sd = SUPPLY_DEMAND[category] || SUPPLY_DEMAND.other;
+  const market = scoreMarketplaceProject({
+    category,
+    budgetAmount,
+    complexity,
+    urgency,
+    biddingPeriod,
+    remote,
+    missingRecords,
+    multipleIncomeSources,
+    internationalTaxIssues,
+    estimatedWorkload,
+    deadlinePressure,
+  });
 
   // Demand score: how sought-after is this project?
-  const demandScore = Math.round((sd.demand + (budgetAmount > 0 ? Math.min(30, budgetAmount / 100) : 15)) / 2);
+  const demandScore = market.interestScore;
 
   // Average experience level of typical bidder pool (not price, just seniority)
   const avgExperience =
@@ -370,7 +801,9 @@ export function getCompetitionIntelligence({ bidCount = 0, category, budgetAmoun
     opportunityWindow,
     demandScore,
     // Supply note for this category
-    supplyNote: sd.note,
+    supplyNote: market.marketRange.supplyDemand.note,
+    recommendedBiddingDuration: market.recommendedBiddingDuration,
+    expectedBidQuality: market.expectedBidQuality,
     // NEVER include: competitor prices, competitor proposal text
   };
 }
@@ -514,8 +947,36 @@ export function computeWinProbability({
  * Overall project health from the client's perspective.
  * Combines budget health + project clarity + market conditions.
  */
-export function getProjectHealthScore({ category, budgetAmount, complexity, hasDescription, descriptionLength, urgency }) {
-  const interest = predictBidderInterest({ category, complexity, urgency, budgetAmount, hasDescription, descriptionLength });
+export function getProjectHealthScore({
+  category,
+  budgetAmount,
+  complexity,
+  hasDescription,
+  descriptionLength,
+  urgency,
+  biddingPeriod,
+  remote,
+  missingRecords,
+  multipleIncomeSources,
+  internationalTaxIssues,
+  estimatedWorkload,
+  deadlinePressure,
+}) {
+  const interest = predictBidderInterest({
+    category,
+    complexity,
+    urgency,
+    biddingPeriod,
+    budgetAmount,
+    remote,
+    missingRecords,
+    multipleIncomeSources,
+    internationalTaxIssues,
+    estimatedWorkload,
+    deadlinePressure,
+    hasDescription,
+    descriptionLength,
+  });
   
   const score = Math.round(
     (interest.budgetScore * 0.5) +

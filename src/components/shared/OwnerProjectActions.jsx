@@ -12,16 +12,21 @@ import { base44 } from "@/api/base44Client";
 
 const statusColors = {
   open: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  reviewing: "bg-amber-50 text-amber-700 border-amber-200",
+  awarded: "bg-violet-50 text-violet-700 border-violet-200",
   paused: "bg-amber-50 text-amber-700 border-amber-200",
   in_progress: "bg-blue-50 text-blue-700 border-blue-200",
+  completed: "bg-emerald-50 text-emerald-700 border-emerald-200",
   closed: "bg-secondary text-muted-foreground border-border",
   expired: "bg-rose-50 text-rose-700 border-rose-200",
 };
 
 const statusLabels = {
-  open: "Open", paused: "Paused", in_progress: "In Progress",
-  closed: "Closed", expired: "Expired",
+  open: "Open", reviewing: "Reviewing Bids", awarded: "Awarded", paused: "Paused", in_progress: "In Progress",
+  completed: "Completed", closed: "Closed", expired: "Expired",
 };
+
+const normalizeUrgency = (urgency) => urgency === "flexible" ? "negotiable" : urgency || "";
 
 export default function OwnerProjectActions({ job, onJobUpdated, bidCount }) {
   const navigate = useNavigate();
@@ -31,7 +36,7 @@ export default function OwnerProjectActions({ job, onJobUpdated, bidCount }) {
     description: job.description || "",
     budget_amount: job.budget_amount || "",
     deadline: job.deadline || "",
-    urgency: job.urgency || "",
+    urgency: normalizeUrgency(job.urgency),
     required_qualifications: (job.required_qualifications || []).join(", "),
   });
 
@@ -58,7 +63,7 @@ export default function OwnerProjectActions({ job, onJobUpdated, bidCount }) {
 
   const handleDuplicate = async () => {
     const { id, created_date, updated_date, created_by, ...rest } = job;
-    const copy = { ...rest, title: `Copy of ${job.title}`, status: "open", _user_posted: true };
+    const copy = { ...rest, title: `Copy of ${job.title}`, status: "open", accepting_bids: true, openForBids: true, _user_posted: true };
     const created = await base44.entities.JobPost.create(copy);
     navigate(`/projects/${created.id}`);
   };
@@ -100,25 +105,25 @@ export default function OwnerProjectActions({ job, onJobUpdated, bidCount }) {
 
         {status === "open" && (
           <Button variant="outline" className="w-full gap-2 justify-start text-amber-600 border-amber-200 hover:bg-amber-50"
-            onClick={() => update({ status: "paused" })} disabled={saving}>
+            onClick={() => update({ status: "paused", accepting_bids: false, openForBids: false })} disabled={saving}>
             <PauseCircle className="h-4 w-4" /> Pause Project
           </Button>
         )}
         {status === "paused" && (
           <Button variant="outline" className="w-full gap-2 justify-start text-emerald-600 border-emerald-200 hover:bg-emerald-50"
-            onClick={() => update({ status: "open" })} disabled={saving}>
+            onClick={() => update({ status: "open", accepting_bids: true, openForBids: true })} disabled={saving}>
             <PlayCircle className="h-4 w-4" /> Resume Project
           </Button>
         )}
         {(status === "open" || status === "paused") && (
           <Button variant="outline" className="w-full gap-2 justify-start text-muted-foreground"
-            onClick={() => update({ status: "closed" })} disabled={saving}>
+            onClick={() => update({ status: "closed", accepting_bids: false, openForBids: false })} disabled={saving}>
             <XCircle className="h-4 w-4" /> Close Project
           </Button>
         )}
         {(status === "closed" || status === "expired") && (
           <Button variant="outline" className="w-full gap-2 justify-start text-primary border-primary/30 hover:bg-primary/5"
-            onClick={() => update({ status: "open" })} disabled={saving}>
+            onClick={() => update({ status: "open", accepting_bids: true, openForBids: true })} disabled={saving}>
             <RefreshCw className="h-4 w-4" /> Repost Project
           </Button>
         )}
@@ -166,9 +171,10 @@ export default function OwnerProjectActions({ job, onJobUpdated, bidCount }) {
               onChange={e => setEditData(p => ({ ...p, urgency: e.target.value }))}
               className="w-full h-9 rounded-md border border-input bg-transparent px-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
               <option value="">— select —</option>
-              <option value="flexible">Flexible timeline</option>
-              <option value="within_month">Within a month</option>
-              <option value="urgent">Urgent — within a week</option>
+              <option value="negotiable">Negotiable</option>
+              <option value="standard">Standard</option>
+              <option value="urgent">Urgent</option>
+              <option value="asap">ASAP</option>
             </select>
           </div>
 

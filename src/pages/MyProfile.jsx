@@ -6,6 +6,12 @@ import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, MapPin, Clock, PoundSterling, Pencil, ExternalLink, Loader2, UserPlus, Eye, EyeOff, Lock, Sparkles } from "lucide-react";
 import { motion } from "framer-motion";
 
+const ROLE_LABELS = {
+  client: "Client",
+  professional: "Professional",
+  both: "Client & Professional",
+};
+
 export default function MyProfile() {
   const navigate = useNavigate();
   const [profile, setProfile] = useState(null);
@@ -55,6 +61,11 @@ export default function MyProfile() {
   const vis = visibilityConfig[profile.visibility] || visibilityConfig.public;
   const avail = availabilityConfig[profile.availability] || availabilityConfig.available;
   const initials = (profile.full_name || "").split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
+  const trustSummary = [
+    ...(profile.qualifications || []).slice(0, 2),
+    profile.years_experience ? `${profile.years_experience}+ years experience` : null,
+    ...(profile.specialisations || []).slice(0, 2),
+  ].filter(Boolean);
 
   return (
     <div className="min-h-screen bg-background">
@@ -129,7 +140,10 @@ export default function MyProfile() {
             </div>
             <div className="flex-1 min-w-0">
               <h2 className="text-xl font-bold text-foreground">{profile.full_name}</h2>
-              <p className="text-muted-foreground text-sm mt-0.5">{profile.title}</p>
+              <p className="text-muted-foreground text-sm mt-0.5">{profile.headline || profile.title}</p>
+              <Badge variant="outline" className="mt-2 text-xs">
+                {ROLE_LABELS[profile.user_role] || "Professional"}
+              </Badge>
               <div className="flex flex-wrap items-center gap-3 mt-2 text-sm text-muted-foreground">
                 {profile.location && (
                   <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{profile.location}</span>
@@ -145,6 +159,15 @@ export default function MyProfile() {
                 <span className={`h-1.5 w-1.5 rounded-full ${avail.dot}`} />
                 {avail.label}
               </div>
+              {trustSummary.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {trustSummary.map((item) => (
+                    <span key={item} className="px-2 py-0.5 rounded-full bg-primary/8 text-primary border border-primary/15 text-[10px] font-bold">
+                      {item}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 

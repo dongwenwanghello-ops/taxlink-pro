@@ -13,13 +13,14 @@
 import React, { useMemo } from "react";
 import { motion } from "framer-motion";
 import {
-  TrendingUp, AlertCircle, CheckCircle2, Users, ShieldCheck,
+  TrendingUp, AlertCircle, CheckCircle2, Users, ShieldCheck, Clock,
   Info, Zap, EyeOff
 } from "lucide-react";
 import {
   analyseBidHealth,
   getCompetitionIntelligence,
 } from "@/lib/marketplaceIntelligence";
+import { computeBidCompetitiveness } from "@/lib/winProbabilityEngine";
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -50,18 +51,77 @@ export default function BidIntelligence({
   budgetAmount,
   category,
   timeline,
+  qualifications = [],
   proposal = "",
   bidCount = 0,
+  completedJobs = 0,
+  yearsExperience,
+  rating = 0,
+  onTimeCompletionRate = 0.8,
+  clientTrustScore = 0.85,
   complexity = "medium",
+  urgency = "negotiable",
+  biddingPeriod,
+  remote = true,
+  missingRecords = false,
+  multipleIncomeSources = false,
+  internationalTaxIssues = false,
+  estimatedWorkload,
+  deadlinePressure,
 }) {
   const bidHealth = useMemo(
-    () => analyseBidHealth({ amount, category, budgetAmount, complexity }),
-    [amount, category, budgetAmount, complexity]
+    () => analyseBidHealth({
+      amount,
+      category,
+      budgetAmount,
+      complexity,
+      urgency,
+      remote,
+      missingRecords,
+      multipleIncomeSources,
+      internationalTaxIssues,
+      estimatedWorkload,
+      deadlinePressure,
+    }),
+    [amount, category, budgetAmount, complexity, urgency, remote, missingRecords, multipleIncomeSources, internationalTaxIssues, estimatedWorkload, deadlinePressure]
   );
 
   const competition = useMemo(
-    () => getCompetitionIntelligence({ bidCount, category, budgetAmount }),
-    [bidCount, category, budgetAmount]
+    () => getCompetitionIntelligence({
+      bidCount,
+      category,
+      budgetAmount,
+      complexity,
+      urgency,
+      biddingPeriod,
+      remote,
+      missingRecords,
+      multipleIncomeSources,
+      internationalTaxIssues,
+      estimatedWorkload,
+      deadlinePressure,
+    }),
+    [bidCount, category, budgetAmount, complexity, urgency, biddingPeriod, remote, missingRecords, multipleIncomeSources, internationalTaxIssues, estimatedWorkload, deadlinePressure]
+  );
+
+  const competitiveness = useMemo(
+    () => computeBidCompetitiveness({
+      amount,
+      budgetAmount,
+      proposal,
+      timeline,
+      bidCount,
+      urgency,
+      category,
+      complexity,
+      qualifications,
+      completedJobs,
+      yearsExperience,
+      rating,
+      onTimeCompletionRate,
+      clientTrustScore,
+    }),
+    [amount, budgetAmount, proposal, timeline, bidCount, urgency, category, complexity, qualifications, completedJobs, yearsExperience, rating, onTimeCompletionRate, clientTrustScore]
   );
 
   if (!bidHealth) return null;
@@ -74,6 +134,16 @@ export default function BidIntelligence({
   };
   const hs = healthStyles[bidHealth.healthLevel] || healthStyles.neutral;
   const HealthIcon = hs.icon;
+  const competitivenessStyles = {
+    high: "bg-emerald-50 border-emerald-200 text-emerald-700",
+    strong: "bg-emerald-50 border-emerald-200 text-emerald-700",
+    competitive: "bg-blue-50 border-blue-200 text-blue-700",
+    watch: "bg-amber-50 border-amber-200 text-amber-700",
+    low: "bg-rose-50 border-rose-200 text-rose-700",
+  };
+  const timelineInsight = competitiveness?.insights.find((insight) =>
+    /timeline|delivery|urgent|urgency|complex/i.test(insight.text)
+  );
 
   // Proposal quality tips (no fake score — just actionable advice)
   const proposalTips = [];
@@ -96,6 +166,48 @@ export default function BidIntelligence({
       </div>
 
       <div className="px-4 pb-4 pt-3 space-y-3">
+
+        {/* Price health vs market */}
+        {competitiveness && (
+          <div className={`rounded-xl border px-3 py-2.5 space-y-2 ${competitivenessStyles[competitiveness.probabilityRange.tone] || competitivenessStyles.competitive}`}>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-1.5 text-xs font-bold">
+                <TrendingUp className="h-3.5 w-3.5 shrink-0" />
+                <span>{competitiveness.label}</span>
+              </div>
+              <span className="text-sm font-black tabular-nums">{competitiveness.displayRange}</span>
+            </div>
+            <p className="text-[11px] opacity-90">{competitiveness.summary}</p>
+            <div className="space-y-1.5">
+              {competitiveness.insights.slice(0, 3).map((insight, i) => (
+                <FactorTag key={i} text={insight.text} type={insight.type} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {competitiveness && timeline && (
+          <div className="rounded-xl bg-secondary/30 border border-border/50 px-3 py-2.5 space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
+                <Clock className="h-3 w-3 text-primary" />
+                Delivery fit
+              </p>
+              <span className="text-[11px] font-bold text-foreground">{competitiveness.market.deliveryTimeline}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-[11px]">
+              <div className="rounded-lg bg-card border border-border/50 px-2 py-1.5">
+                <p className="text-muted-foreground">Urgency fit</p>
+                <p className="font-bold text-foreground">{Math.round(competitiveness.factors.urgencyFit)} / 100</p>
+              </div>
+              <div className="rounded-lg bg-card border border-border/50 px-2 py-1.5">
+                <p className="text-muted-foreground">Realism</p>
+                <p className="font-bold text-foreground">{Math.round(competitiveness.factors.timelineRealism)} / 100</p>
+              </div>
+            </div>
+            {timelineInsight && <FactorTag text={timelineInsight.text} type={timelineInsight.type} />}
+          </div>
+        )}
 
         {/* Price health vs market */}
         <div className={`rounded-xl border px-3 py-2.5 space-y-1 ${hs.badge}`}>
@@ -145,6 +257,10 @@ export default function BidIntelligence({
             <div className="flex items-center gap-1.5 text-muted-foreground col-span-2">
               <ShieldCheck className="h-3 w-3 shrink-0 text-emerald-500" />
               <span>Shortlist odds: {competition.shortlistOdds}</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-muted-foreground col-span-2">
+              <Info className="h-3 w-3 shrink-0 text-primary" />
+              <span>Expected quality: {competition.expectedBidQuality}</span>
             </div>
           </div>
         </div>
