@@ -17,9 +17,10 @@ export function getMinimumIncrement(amount) {
  * Validates if a new bid meets the minimum increment requirement.
  * Returns { valid: boolean, message: string, nextValidRange: { min, max } }
  */
-export function validateBidIncrement(newBidAmount, currentLowestBid) {
+export function validateBidIncrement(newBidAmount, referenceBidAmount) {
+  const currentLowestBid = referenceBidAmount;
   if (!currentLowestBid || newBidAmount === currentLowestBid) {
-    return { valid: false, message: "Bid must differ from current lowest bid", nextValidRange: null };
+    return { valid: false, message: "Your quote must differ from your previous amount", nextValidRange: null };
   }
 
   const increment = getMinimumIncrement(currentLowestBid);

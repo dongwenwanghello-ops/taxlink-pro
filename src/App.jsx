@@ -1,4 +1,6 @@
+import { useEffect } from "react";
 import { Toaster } from "@/components/ui/toaster"
+import { bootstrapMarketplaceWorkflow, refreshMarketplaceWorkflow } from "@/lib/workflowBootstrap";
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
@@ -14,10 +16,14 @@ import CreateProfile from './pages/CreateProfile';
 import PostJob from './pages/PostJob';
 import Reviews from './pages/Reviews';
 import ProfileDetail from './pages/ProfileDetail';
+import BidderPublicProfile from './pages/BidderPublicProfile';
 import ProjectDetail from './pages/ProjectDetail';
 import MyProjects from './pages/MyProjects';
+import ProjectOwnerBids from './pages/ProjectOwnerBids';
 import MyBidsDemo from './components/emptyStates/MyBidsDemo';
 import MyProfile from './pages/MyProfile';
+import Workspaces from './pages/Workspaces';
+import ProjectWorkspace from './pages/ProjectWorkspace';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -54,6 +60,10 @@ const AuthenticatedApp = () => {
         <Route path="/my-bids" element={<MyBidsDemo />} />
         <Route path="/my-profile" element={<MyProfile />} />
         <Route path="/my-projects" element={<MyProjects />} />
+        <Route path="/my-projects/:projectId" element={<ProjectOwnerBids />} />
+        <Route path="/workspaces" element={<Workspaces />} />
+        <Route path="/workspace/:projectId" element={<ProjectWorkspace />} />
+        <Route path="/professionals/bid/:bidId" element={<BidderPublicProfile />} />
         <Route path="/professionals/:id" element={<ProfileDetail />} />
 
       </Route>
@@ -65,6 +75,20 @@ const AuthenticatedApp = () => {
 
 
 function App() {
+  useEffect(() => {
+    bootstrapMarketplaceWorkflow();
+    const onWorkflowEvent = () => refreshMarketplaceWorkflow();
+    window.addEventListener("projectAwarded", onWorkflowEvent);
+    window.addEventListener("bidUpdated", onWorkflowEvent);
+    window.addEventListener("workspaceCreated", onWorkflowEvent);
+    window.addEventListener("workspaceUpdated", onWorkflowEvent);
+    return () => {
+      window.removeEventListener("projectAwarded", onWorkflowEvent);
+      window.removeEventListener("bidUpdated", onWorkflowEvent);
+      window.removeEventListener("workspaceCreated", onWorkflowEvent);
+      window.removeEventListener("workspaceUpdated", onWorkflowEvent);
+    };
+  }, []);
 
   return (
     <AuthProvider>

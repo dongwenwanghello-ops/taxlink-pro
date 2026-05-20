@@ -370,7 +370,7 @@ export default function Jobs() {
                 ) : (
                   <>
                     <h3 className="text-lg font-semibold text-foreground mb-1">No projects posted yet</h3>
-                    <p className="text-muted-foreground text-sm mb-5">Be the first to post a remote project and receive competitive bids from verified UK tax professionals.</p>
+                    <p className="text-muted-foreground text-sm mb-5">Be the first to post a remote project and receive professional quotes from verified UK tax specialists.</p>
                     <Link to="/post-job">
                       <Button className="rounded-xl gap-2"><Plus className="h-4 w-4" />Post the First Project</Button>
                     </Link>

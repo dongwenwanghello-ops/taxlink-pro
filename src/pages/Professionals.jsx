@@ -1,13 +1,42 @@
-import React, { useState, useEffect } from "react";
-import { Link, useNavigate, useLocation } from "react-router-dom";
+import React, { useState, useEffect, useMemo } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-
-/* global gtag */
-import { Search, Users, X, ShieldCheck, Wifi, SlidersHorizontal, Star, TrendingUp, Clock, CheckCircle2, MapPin, Briefcase, Heart, Zap } from "lucide-react";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import {
+  Search,
+  Users,
+  X,
+  ShieldCheck,
+  Wifi,
+  Heart,
+  PanelRight,
+  ArrowRight,
+  MessageCircle,
+  Compass,
+} from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { DEMO_PROFESSIONALS } from "@/lib/demoData";
 import { base44 } from "@/api/base44Client";
+import {
+  CLIENT_NEED_OPTIONS,
+  buildExpertiseIdentityHeadline,
+  buildOutcomeLine,
+  narrativeLine,
+  adviserIntroduction,
+  warmTrustSentence,
+  getTypicalEngagementLabel,
+  oftenSelectedFor,
+  partitionRecommended,
+  discoveryFitScore,
+} from "@/lib/professionalDiscovery";
 
 const QUALIFICATIONS = ["ACA", "ACCA", "CTA", "ATT", "AAT", "CIMA"];
 const SPECIALISATIONS = [
@@ -16,178 +45,271 @@ const SPECIALISATIONS = [
   "Capital Gains", "Making Tax Digital",
 ];
 const RATE_BANDS = [
-  { label: "Any Rate",     min: 0,   max: Infinity },
-  { label: "Up to £50/hr", min: 0,   max: 51 },
-  { label: "£50–£100/hr",  min: 50,  max: 101 },
-  { label: "£100–£150/hr", min: 100, max: 151 },
-  { label: "£150+/hr",     min: 150, max: Infinity },
+  { label: "Any guide range", min: 0, max: Infinity },
+  { label: "Under ~£250 typical day-equivalent", min: 0, max: 65 },
+  { label: "~£250–£500", min: 65, max: 95 },
+  { label: "~£500–£800", min: 95, max: 130 },
+  { label: "Premium / specialist (~£800+)", min: 130, max: Infinity },
 ];
 const EXP_LEVELS = [
-  { label: "Any Experience", min: 0, max: Infinity },
-  { label: "1–5 years",      min: 1, max: 5 },
-  { label: "5–10 years",     min: 5, max: 10 },
-  { label: "10+ years",      min: 10, max: Infinity },
+  { label: "Any experience depth", min: 0, max: Infinity },
+  { label: "1–5 years", min: 1, max: 5 },
+  { label: "5–10 years", min: 5, max: 10 },
+  { label: "10+ years", min: 10, max: Infinity },
 ];
 
 const AVAIL_CONFIG = {
-  available:   { label: "Active now",        dot: "bg-emerald-500", color: "bg-emerald-100 text-emerald-700" },
-  limited:     { label: "Replies within 2h", dot: "bg-amber-500",   color: "bg-amber-100 text-amber-700" },
-  unavailable: { label: "Recently online",   dot: "bg-slate-400",   color: "bg-slate-100 text-slate-600" },
+  available:   { label: "Available now", dot: "bg-emerald-500", color: "text-emerald-700" },
+  limited:     { label: "Responds within a few hours", dot: "bg-teal-500", color: "text-teal-700" },
+  unavailable: { label: "Recently active", dot: "bg-slate-400", color: "text-muted-foreground" },
 };
 
 const GRAD = [
-  "from-blue-500 to-blue-700", "from-violet-500 to-violet-700",
-  "from-emerald-500 to-emerald-700", "from-rose-500 to-rose-700",
-  "from-amber-500 to-amber-600", "from-cyan-500 to-cyan-700",
-  "from-indigo-500 to-indigo-700", "from-pink-500 to-pink-700",
-  "from-teal-500 to-teal-700", "from-orange-500 to-orange-600",
-  "from-purple-500 to-purple-700", "from-lime-500 to-lime-700",
+  "from-teal-500 to-teal-700", "from-slate-600 to-slate-800",
+  "from-violet-500 to-violet-700", "from-emerald-600 to-teal-700",
 ];
 
 const LIVE_ACTIVITIES = [
-  "James from Manchester just posted a Corporation Tax project",
-  "Sarah replied to an R&D credit inquiry",
-  "Priya accepted a new bookkeeping retainer",
-  "New bid submitted on a VAT return project",
-  "David updated his Capital Gains availability",
-  "Emma completed a payroll project — 5★ review received",
-  "Michael joined a new HMRC investigation case",
-  "Tom bid on a Software R&D claim in Cambridge",
+  "Advisers across the UK taking on VAT and bookkeeping relationships",
+  "Many specialists are used to HMRC letters and enquiries",
+  "Owner-managed businesses often stay with the same adviser here",
+  "When scope is unclear, a short call usually sorts the next step",
 ];
 
-function LiveFeed() {
-  const [items, setItems] = useState(() =>
-    [0, 1].map((i) => ({ id: i, text: LIVE_ACTIVITIES[i] }))
-  );
+function MarketplacePulse({ className = "" }) {
+  const [i, setI] = useState(0);
   useEffect(() => {
-    const t = setInterval(() => {
-      setItems((prev) => {
-        const next = [...prev.slice(1), { id: Date.now(), text: LIVE_ACTIVITIES[Math.floor(Math.random() * LIVE_ACTIVITIES.length)] }];
-        return next;
-      });
-    }, 4000);
+    const t = setInterval(() => setI((v) => (v + 1) % LIVE_ACTIVITIES.length), 4500);
     return () => clearInterval(t);
   }, []);
   return (
-    <div className="rounded-xl border border-border/60 bg-card p-3 space-y-1.5 overflow-hidden">
-      <div className="flex items-center gap-1.5 mb-1.5">
-        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-        <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Live Activity</span>
-      </div>
-      <AnimatePresence initial={false}>
-        {items.map((item) => (
-          <motion.div key={item.id}
-            initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }}
-            transition={{ duration: 0.3 }}
-            className="flex items-start gap-1.5 text-[11px] text-muted-foreground py-0.5 border-b border-border/20 last:border-0">
-            <Zap className="h-3 w-3 text-violet-400 shrink-0 mt-0.5" />
-            {item.text}
-          </motion.div>
-        ))}
+    <div className={`flex items-start gap-2 text-sm text-muted-foreground ${className}`}>
+      <span className="h-2 w-2 rounded-full bg-teal-500 shrink-0 mt-1.5 animate-pulse" />
+      <AnimatePresence mode="wait">
+        <motion.p
+          key={i}
+          initial={{ opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 4 }}
+          transition={{ duration: 0.25 }}
+          className="leading-snug"
+        >
+          {LIVE_ACTIVITIES[i]}
+        </motion.p>
       </AnimatePresence>
-    </div>
-  );
-}
-
-function ProfCard({ profile, featured, idx, savedIds, onToggleSave }) {
-  const initials = profile.full_name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
-  const grad = GRAD[idx % GRAD.length];
-  const avail = AVAIL_CONFIG[profile.availability] || AVAIL_CONFIG.available;
-  const isSaved = savedIds.includes(profile.id);
-  const [hovered, setHovered] = useState(false);
-
-  return (
-    <div className={`relative group bg-card border rounded-2xl overflow-hidden transition-all duration-200 hover:shadow-lg hover:shadow-primary/8 ${featured ? "border-primary/40 shadow-md shadow-primary/8" : "border-border/70 hover:border-primary/30"}`}
-      onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
-      {featured && <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-violet-500 to-primary" />}
-      <div className="p-5">
-        <div className="flex items-start gap-3 mb-3">
-          <div className={`relative h-14 w-14 rounded-xl bg-gradient-to-br ${grad} flex items-center justify-center text-white font-black text-base shrink-0`}>
-            {initials}
-            {hovered && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                className="absolute inset-0 rounded-xl bg-black/20 flex items-center justify-center">
-                <span className="text-[9px] font-bold text-white">View</span>
-              </motion.div>
-            )}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="font-bold text-foreground text-sm leading-tight">{profile.full_name}</span>
-              <CheckCircle2 className="h-3.5 w-3.5 text-primary shrink-0" />
-              {featured && <span className="text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700">Featured</span>}
-            </div>
-            <p className="text-xs text-muted-foreground mt-0.5 leading-snug">{profile.title}</p>
-            <div className="flex items-center gap-1 mt-1">
-              <MapPin className="h-3 w-3 text-muted-foreground shrink-0" />
-              <span className="text-xs text-muted-foreground">{profile.location}</span>
-              <span className={`ml-2 flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${avail.color}`}>
-                <span className={`h-1.5 w-1.5 rounded-full ${avail.dot}`} />
-                {avail.label}
-              </span>
-            </div>
-          </div>
-          <button
-            onClick={(e) => { e.preventDefault(); onToggleSave(profile.id); }}
-            className={`shrink-0 p-1.5 rounded-lg transition-colors ${isSaved ? "text-rose-500" : "text-muted-foreground/40 hover:text-rose-400"}`}>
-            <Heart className={`h-4 w-4 ${isSaved ? "fill-rose-500" : ""}`} />
-          </button>
-        </div>
-
-        <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2 mb-3">{profile.bio}</p>
-
-        <div className="flex flex-wrap gap-1 mb-3">
-          {profile.qualifications.map(q => (
-            <span key={q} className="px-2 py-0.5 rounded-md bg-primary/8 text-primary border border-primary/20 text-[10px] font-bold">{q}</span>
-          ))}
-          {profile.specialisations.slice(0, 2).map(s => (
-            <span key={s} className="px-2 py-0.5 rounded-md bg-secondary text-secondary-foreground text-[10px] font-medium">{s}</span>
-          ))}
-        </div>
-
-        <div className="flex items-center justify-between pt-3 border-t border-border/50">
-          <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
-              <span className="font-semibold text-foreground">4.9</span>
-            </span>
-            <span className="flex items-center gap-1">
-              <Briefcase className="h-3 w-3" />
-              {profile.completed_jobs} jobs
-            </span>
-            <span>{profile.years_experience}yr exp</span>
-          </div>
-          <span className="text-sm font-extrabold text-primary">
-            {profile.hourly_rate ? `£${profile.hourly_rate}/hr` : "Rate on request"}
-          </span>
-        </div>
-      </div>
-
-      {/* View Profile hover overlay */}
-      <Link to={`/professionals/${profile.slug}`} className="absolute inset-0" onClick={() => base44.analytics.track({ eventName: "profile_open", properties: { professional: profile.full_name } })}>
-        <span className="sr-only">View {profile.full_name}'s profile</span>
-      </Link>
-    </div>
-  );
-}
-
-function SidebarSection({ title, children }) {
-  return (
-    <div>
-      <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2.5">{title}</p>
-      {children}
     </div>
   );
 }
 
 function FilterBtn({ active, onClick, children }) {
   return (
-    <button onClick={onClick}
+    <button
+      type="button"
+      onClick={onClick}
       className={`w-full text-left text-sm px-2.5 py-1.5 rounded-lg transition-colors font-medium ${
         active ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-secondary"
-      }`}>
+      }`}
+    >
       {children}
     </button>
+  );
+}
+
+function FiltersPanel({
+  availability,
+  setAvailability,
+  selectedQual,
+  setSelectedQual,
+  selectedSpec,
+  setSelectedSpec,
+  selectedLocation,
+  setSelectedLocation,
+  remoteOnly,
+  setRemoteOnly,
+  rateBand,
+  setRateBand,
+  expLevel,
+  setExpLevel,
+  allLocations,
+  handleQualClick,
+  handleSpecClick,
+  handleLocationClick,
+}) {
+  return (
+    <div className="space-y-6 pt-2">
+      <div>
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-2">Availability</p>
+        {[
+          { value: "all", label: "Show all" },
+          { value: "available", label: "Available now" },
+          { value: "limited", label: "Fast response" },
+          { value: "unavailable", label: "Recently active" },
+        ].map((opt) => (
+          <FilterBtn key={opt.value} active={availability === opt.value} onClick={() => setAvailability(opt.value)}>
+            {opt.label}
+          </FilterBtn>
+        ))}
+      </div>
+      <div>
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-2">Credentials</p>
+        <FilterBtn active={!selectedQual} onClick={() => setSelectedQual(null)}>Any</FilterBtn>
+        {QUALIFICATIONS.map((q) => (
+          <FilterBtn key={q} active={selectedQual === q} onClick={() => handleQualClick(q)}>{q}</FilterBtn>
+        ))}
+      </div>
+      <div>
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-2">Service area</p>
+        <FilterBtn active={!selectedSpec} onClick={() => setSelectedSpec(null)}>Any</FilterBtn>
+        {SPECIALISATIONS.map((s) => (
+          <FilterBtn key={s} active={selectedSpec === s} onClick={() => handleSpecClick(s)}>{s}</FilterBtn>
+        ))}
+      </div>
+      <div>
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-2">Region</p>
+        <FilterBtn active={!selectedLocation} onClick={() => setSelectedLocation(null)}>UK-wide</FilterBtn>
+        {allLocations.map((loc) => (
+          <FilterBtn key={loc} active={selectedLocation === loc} onClick={() => handleLocationClick(loc)}>{loc}</FilterBtn>
+        ))}
+      </div>
+      <div>
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-2">Typical engagement level</p>
+        {RATE_BANDS.map((b, i) => (
+          <FilterBtn key={`${b.label}-${i}`} active={rateBand === i} onClick={() => setRateBand(i)}>{b.label}</FilterBtn>
+        ))}
+      </div>
+      <div>
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-2">Experience</p>
+        {EXP_LEVELS.map((e, i) => (
+          <FilterBtn key={e.label} active={expLevel === i} onClick={() => setExpLevel(i)}>{e.label}</FilterBtn>
+        ))}
+      </div>
+      <div>
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-2">Working style</p>
+        <FilterBtn active={!remoteOnly} onClick={() => setRemoteOnly(false)}>Any</FilterBtn>
+        <FilterBtn active={remoteOnly} onClick={() => setRemoteOnly(true)}>
+          <span className="flex items-center gap-1.5"><Wifi className="h-3.5 w-3.5" /> Remote-first</span>
+        </FilterBtn>
+      </div>
+    </div>
+  );
+}
+
+function DiscoveryCard({
+  profile,
+  variant,
+  idx,
+  savedIds,
+  onToggleSave,
+  activeNeed,
+}) {
+  const initials = profile.full_name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
+  const grad = GRAD[idx % GRAD.length];
+  const isSaved = savedIds.includes(profile.id);
+  const avail = AVAIL_CONFIG[profile.availability] || AVAIL_CONFIG.available;
+  const headline = buildExpertiseIdentityHeadline(profile);
+  const outcome = buildOutcomeLine(profile);
+  const story = narrativeLine(profile);
+  const isLarge = variant === "large";
+  const intro = isLarge ? adviserIntroduction(profile, 280) : null;
+  const trustLine = warmTrustSentence(profile);
+  const engage = getTypicalEngagementLabel(profile);
+  const reasonsMax = isLarge ? 3 : 2;
+  const reasons = oftenSelectedFor(profile, activeNeed, reasonsMax);
+  const qualLine = (profile.qualifications || []).slice(0, 4).join(" · ");
+
+  const trackProfile = () => {
+    base44.analytics.track({ eventName: "profile_open", properties: { professional: profile.full_name } });
+  };
+
+  return (
+    <div
+      className={`relative bg-card rounded-2xl border transition-shadow duration-300 hover:shadow-lg ${
+        isLarge ? "rounded-3xl border-border/50 p-7 md:p-8 shadow-sm" : "border-border/50 p-6"
+      }`}
+    >
+      {isLarge && (
+        <div className="absolute top-0 left-8 right-8 h-px bg-gradient-to-r from-transparent via-teal-400/40 to-transparent rounded-full" />
+      )}
+
+      <div className="flex flex-col sm:flex-row sm:items-start gap-5 md:gap-6">
+        <div className={`rounded-2xl bg-gradient-to-br ${grad} flex items-center justify-center text-white font-bold shrink-0 shadow-inner ${isLarge ? "h-[4.25rem] w-[4.25rem] text-lg" : "h-14 w-14 text-base"}`}>
+          {initials}
+        </div>
+
+        <div className="flex-1 min-w-0 space-y-4">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <h3 className={`font-semibold text-foreground leading-snug ${isLarge ? "text-lg md:text-xl" : "text-base"}`}>
+                {headline}
+              </h3>
+              <p className="text-xs text-muted-foreground mt-1">{profile.full_name} · {profile.location}</p>
+            </div>
+            <button
+              type="button"
+              aria-label={isSaved ? "Remove from saved" : "Save adviser"}
+              onClick={() => onToggleSave(profile.id)}
+              className={`shrink-0 p-2 rounded-lg transition-colors ${isSaved ? "text-rose-500" : "text-muted-foreground/35 hover:text-rose-400"}`}
+            >
+              <Heart className={`h-4 w-4 ${isSaved ? "fill-rose-500" : ""}`} />
+            </button>
+          </div>
+
+          <p className={`text-muted-foreground ${isLarge ? "text-sm" : "text-xs"} leading-relaxed ${isLarge ? "line-clamp-3" : "line-clamp-2"}`}>{outcome}</p>
+
+          {isLarge && intro && (
+            <p className="text-sm text-foreground/90 leading-relaxed line-clamp-5">{intro}</p>
+          )}
+          {!isLarge && story && (
+            <p className="text-xs text-foreground/85 leading-relaxed line-clamp-2">{story}</p>
+          )}
+
+          {qualLine && (
+            <p className="text-[11px] font-medium text-muted-foreground tracking-wide">{qualLine}</p>
+          )}
+
+          <p className="text-xs text-muted-foreground leading-relaxed">{trustLine}</p>
+
+          {reasons.length > 0 && (
+            <div className="rounded-xl bg-muted/30 border border-border/40 px-4 py-3 space-y-2">
+              <p className="text-xs font-semibold text-foreground">Often selected for</p>
+              <ul className="text-xs text-muted-foreground space-y-1.5 leading-snug list-disc list-inside marker:text-teal-600/70">
+                {reasons.map((r, ri) => (
+                  <li key={`${profile.id}-r-${ri}`} className="pl-0.5">{r}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-end justify-between gap-4 pt-1 border-t border-border/30">
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-foreground leading-snug">{engage.primary}</p>
+              {engage.sub && <p className="text-[11px] text-muted-foreground leading-relaxed">{engage.sub}</p>}
+              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <span className={`h-1.5 w-1.5 rounded-full ${avail.dot}`} />
+                <span className={avail.color}>{avail.label}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2 pt-2">
+            <Button asChild size="sm" className={`rounded-xl gap-1.5 ${isLarge ? "h-10 px-4" : "h-9"}`}>
+              <Link to={`/professionals/${profile.slug || profile.id}`} onClick={trackProfile}>
+                View Adviser <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </Button>
+            <Button asChild size="sm" variant="outline" className="rounded-xl gap-1.5">
+              <Link to="/post-job">Discuss Project</Link>
+            </Button>
+            <Button asChild size="sm" variant="ghost" className="rounded-xl gap-1.5 text-muted-foreground">
+              <Link to="/post-job">
+                <MessageCircle className="h-3.5 w-3.5" />
+                Request Consultation
+              </Link>
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -195,26 +317,32 @@ export default function Professionals() {
   const location = useLocation();
   const params = new URLSearchParams(location.search);
 
-  const [search, setSearch]             = useState("");
+  const [search, setSearch] = useState("");
+  const [activeNeed, setActiveNeed] = useState(params.get("need") || null);
   const [availability, setAvailability] = useState("all");
   const [selectedSpec, setSelectedSpec] = useState(params.get("spec") || null);
   const [selectedQual, setSelectedQual] = useState(params.get("qual") || null);
   const [selectedLocation, setSelectedLocation] = useState(params.get("location") || null);
-  const [remoteOnly, setRemoteOnly]     = useState(false);
-  const [rateBand, setRateBand]         = useState(0);
-  const [expLevel, setExpLevel]         = useState(0);
-  const [savedIds, setSavedIds]         = useState(() => JSON.parse(localStorage.getItem("saved_profiles") || "[]"));
+  const [remoteOnly, setRemoteOnly] = useState(false);
+  const [rateBand, setRateBand] = useState(0);
+  const [expLevel, setExpLevel] = useState(0);
+  const [savedIds, setSavedIds] = useState(() => JSON.parse(localStorage.getItem("saved_profiles") || "[]"));
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [realProfiles, setRealProfiles] = useState([]);
 
   useEffect(() => {
     base44.entities.ProfessionalProfile.list("-created_date", 100)
-      .then(data => setRealProfiles(data || []))
+      .then((data) => setRealProfiles(data || []))
       .catch(() => {});
   }, []);
 
-  // Merge real profiles (first) with demo data, avoiding id collisions
-  const demoIds = new Set(DEMO_PROFESSIONALS.map(p => p.id));
-  const uniqueReal = realProfiles.filter(p => !demoIds.has(p.id) && (p.visibility === "public" || !p.visibility)).map(p => ({
+  useEffect(() => {
+    const n = params.get("need");
+    if (n) setActiveNeed(n);
+  }, [location.search]);
+
+  const demoIds = new Set(DEMO_PROFESSIONALS.map((p) => p.id));
+  const uniqueReal = realProfiles.filter((p) => !demoIds.has(p.id) && (p.visibility === "public" || !p.visibility)).map((p) => ({
     ...p,
     slug: p.id,
     qualifications: p.qualifications || [],
@@ -227,34 +355,82 @@ export default function Professionals() {
   const allProfessionals = [...uniqueReal, ...DEMO_PROFESSIONALS];
 
   const band = RATE_BANDS[rateBand];
-  const exp  = EXP_LEVELS[expLevel];
-  const allLocations = [...new Set(allProfessionals.map(p => p.location).filter(Boolean))].sort();
+  const exp = EXP_LEVELS[expLevel];
+  const allLocations = [...new Set(allProfessionals.map((p) => p.location).filter(Boolean))].sort();
 
-  const filtered = allProfessionals.filter((p) => {
-    if (search) {
+  const filtered = useMemo(() => allProfessionals.filter((p) => {
+    if (search.trim().length >= 2) {
       const q = search.toLowerCase();
-      const hit = p.full_name.toLowerCase().includes(q) ||
-        p.title.toLowerCase().includes(q) ||
-        p.location.toLowerCase().includes(q) ||
-        p.specialisations.some(s => s.toLowerCase().includes(q)) ||
-        p.qualifications.some(q2 => q2.toLowerCase().includes(q));
+      const hit =
+        p.full_name.toLowerCase().includes(q) ||
+        (p.title || "").toLowerCase().includes(q) ||
+        (p.location || "").toLowerCase().includes(q) ||
+        (p.specialisations || []).some((s) => s.toLowerCase().includes(q)) ||
+        (p.qualifications || []).some((x) => x.toLowerCase().includes(q)) ||
+        (p.bio || "").toLowerCase().includes(q);
       if (!hit) return false;
     }
+
+    if (activeNeed && discoveryFitScore(p, activeNeed, "") < 14) return false;
+
     if (availability !== "all" && p.availability !== availability) return false;
-    if (selectedSpec && !p.specialisations.includes(selectedSpec)) return false;
-    if (selectedQual && !p.qualifications.includes(selectedQual)) return false;
+    if (selectedSpec && !p.specialisations?.includes(selectedSpec)) return false;
+    if (selectedQual && !p.qualifications?.includes(selectedQual)) return false;
     if (selectedLocation && p.location !== selectedLocation) return false;
     if (remoteOnly && !p.remote_work) return false;
-    if (p.hourly_rate < band.min || p.hourly_rate >= band.max) return false;
-    if (p.years_experience < exp.min || p.years_experience > exp.max) return false;
-    return true;
-  });
 
-  const hasFilters = search || availability !== "all" || selectedSpec || selectedQual || selectedLocation || remoteOnly || rateBand !== 0 || expLevel !== 0;
+    const hr = Number(p.hourly_rate) || 0;
+    if (rateBand !== 0) {
+      if (hr <= 0) return false;
+      if (hr < band.min || hr >= band.max) return false;
+    }
+
+    const y = Number(p.years_experience) || 0;
+    if (expLevel !== 0 && (y < exp.min || y > exp.max)) return false;
+
+    return true;
+  }), [
+    allProfessionals, search, activeNeed, availability, selectedSpec, selectedQual,
+    selectedLocation, remoteOnly, rateBand, expLevel, band.min, band.max, exp.min, exp.max,
+  ]);
+
+  const { recommended, rest } = useMemo(
+    () => partitionRecommended(filtered, activeNeed, search, 4),
+    [filtered, activeNeed, search],
+  );
+
+  const hasFilters =
+    search ||
+    activeNeed ||
+    availability !== "all" ||
+    selectedSpec ||
+    selectedQual ||
+    selectedLocation ||
+    remoteOnly ||
+    rateBand !== 0 ||
+    expLevel !== 0;
+
+  const filterCount = [
+    activeNeed,
+    availability !== "all",
+    selectedSpec,
+    selectedQual,
+    selectedLocation,
+    remoteOnly,
+    rateBand !== 0,
+    expLevel !== 0,
+  ].filter(Boolean).length;
 
   const clearAll = () => {
-    setSearch(""); setAvailability("all"); setSelectedSpec(null);
-    setSelectedQual(null); setSelectedLocation(null); setRemoteOnly(false); setRateBand(0); setExpLevel(0);
+    setSearch("");
+    setActiveNeed(null);
+    setAvailability("all");
+    setSelectedSpec(null);
+    setSelectedQual(null);
+    setSelectedLocation(null);
+    setRemoteOnly(false);
+    setRateBand(0);
+    setExpLevel(0);
   };
 
   const handleQualClick = (q) => {
@@ -272,263 +448,256 @@ export default function Professionals() {
     setSelectedLocation(selectedLocation === loc ? null : loc);
   };
 
-  const handleSearchChange = (e) => {
-    const query = e.target.value;
-    setSearch(query);
-    if (query.length > 2) {
-      gtag('event', 'search', { 
-        search_term: query,
-        results_count: filtered.filter(p => 
-          p.full_name.toLowerCase().includes(query.toLowerCase()) ||
-          p.specialisations.some(s => s.toLowerCase().includes(query.toLowerCase())) ||
-          p.location.toLowerCase().includes(query.toLowerCase())
-        ).length
-      });
-    }
-  };
-
   const toggleSave = (profileId) => {
-    setSavedIds(prev => {
-      const next = prev.includes(profileId) ? prev.filter(i => i !== profileId) : [...prev, profileId];
+    setSavedIds((prev) => {
+      const next = prev.includes(profileId) ? prev.filter((i) => i !== profileId) : [...prev, profileId];
       localStorage.setItem("saved_profiles", JSON.stringify(next));
       if (!prev.includes(profileId)) {
-        const p = allProfessionals.find(x => x.id === profileId);
-        base44.analytics.track({ eventName: "save_profile", properties: { professional: p?.full_name } });
+        const prof = allProfessionals.find((x) => x.id === profileId);
+        base44.analytics.track({ eventName: "save_profile", properties: { professional: prof?.full_name } });
       }
       return next;
     });
   };
 
+  const needLabel = activeNeed ? CLIENT_NEED_OPTIONS.find((n) => n.id === activeNeed)?.label : null;
+
+  const filtersUi = (
+    <FiltersPanel
+      availability={availability}
+      setAvailability={setAvailability}
+      selectedQual={selectedQual}
+      setSelectedQual={setSelectedQual}
+      selectedSpec={selectedSpec}
+      setSelectedSpec={setSelectedSpec}
+      selectedLocation={selectedLocation}
+      setSelectedLocation={setSelectedLocation}
+      remoteOnly={remoteOnly}
+      setRemoteOnly={setRemoteOnly}
+      rateBand={rateBand}
+      setRateBand={setRateBand}
+      expLevel={expLevel}
+      setExpLevel={setExpLevel}
+      allLocations={allLocations}
+      handleQualClick={handleQualClick}
+      handleSpecClick={handleSpecClick}
+      handleLocationClick={handleLocationClick}
+    />
+  );
+
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <div className="border-b border-border/60 bg-card">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-14">
-          <div className="max-w-2xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-semibold mb-3 border border-primary/20">
-              <ShieldCheck className="h-3.5 w-3.5" />
-              Qualification-Verified Professionals
+      <div className="border-b border-border/50 bg-gradient-to-b from-muted/40 to-background">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16 space-y-8">
+          <div className="space-y-3 max-w-3xl">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-muted/60 text-foreground text-xs font-medium border border-border/60">
+              <Compass className="h-3.5 w-3.5 text-teal-600" />
+              Adviser-led · UK tax & accounting
             </div>
-            <h1 className="text-3xl sm:text-4xl font-extrabold text-foreground tracking-tight">Find Your Expert</h1>
-            <p className="mt-2 text-muted-foreground text-lg">
-              Browse {allProfessionals.length}+ UK-based tax and accounting professionals, each verified against recognised professional bodies.
+            <h1 className="text-3xl sm:text-4xl font-bold text-foreground tracking-tight leading-tight">
+              Find a trusted adviser for your situation
+            </h1>
+            <p className="text-muted-foreground text-lg leading-relaxed">
+              Trusted UK tax professionals for businesses and individuals. Get matched with advisers experienced in situations like yours — relationship-led support, scoped after a proper conversation.
             </p>
-            <div className="mt-3 flex items-start gap-2 text-sm text-muted-foreground max-w-xl">
-              <ShieldCheck className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-              <span>TaxLink Pro is a <strong className="text-foreground">quality-first marketplace</strong> — every professional is assessed for qualifications, expertise, and professionalism, not just lowest price.</span>
+            <MarketplacePulse />
+          </div>
+
+          <div className="space-y-3">
+            <p className="text-sm font-medium text-foreground">What do you need help with?</p>
+            <div className="flex flex-wrap gap-2">
+              {CLIENT_NEED_OPTIONS.map((need) => {
+                const active = activeNeed === need.id;
+                return (
+                  <button
+                    key={need.id}
+                    type="button"
+                    onClick={() => setActiveNeed(active ? null : need.id)}
+                    className={`text-left px-3.5 py-2 rounded-xl border text-sm transition-all max-w-[240px] ${
+                      active
+                        ? "border-teal-500 bg-teal-50 text-teal-950 shadow-sm"
+                        : "border-border/70 bg-card hover:border-teal-200 text-foreground"
+                    }`}
+                  >
+                    <span className="font-semibold block leading-snug">{need.label}</span>
+                    <span className={`text-[11px] mt-0.5 block ${active ? "text-teal-800/90" : "text-muted-foreground"}`}>{need.blurb}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          <div className="mt-6 relative max-w-xl">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Search by name, specialisation, or location..."
-              value={search} onChange={handleSearchChange}
-              className="pl-10 h-11 rounded-xl" />
+          <div className="relative max-w-xl">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+            <Input
+              placeholder="Or describe your situation in your own words…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-10 pr-10 h-12 rounded-xl border-border/70 bg-background/80 shadow-sm text-base"
+            />
             {search && (
-              <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+              <button type="button" onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" aria-label="Clear search">
                 <X className="h-4 w-4" />
               </button>
             )}
           </div>
 
-          {/* Quick filter chips */}
-          {search && (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {allProfessionals.filter(p =>
-                p.full_name.toLowerCase().includes(search.toLowerCase()) ||
-                p.specialisations.some(s => s.toLowerCase().includes(search.toLowerCase()))
-              ).slice(0, 4).map(p => (
-                <Link key={p.id} to={`/professionals/${p.slug || p.id}`}
-                  className="px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-semibold border border-primary/20 hover:bg-primary/20 transition-colors">
-                  {p.full_name} — {p.title}
-                </Link>
-              ))}
-            </div>
-          )}
-
-          <div className="mt-4 flex flex-wrap gap-3">
-            {[
-              { Icon: Star, text: "4.9★ avg rating", color: "text-amber-600 bg-amber-50 border-amber-200" },
-              { Icon: TrendingUp, text: "96% on-time delivery", color: "text-emerald-700 bg-emerald-50 border-emerald-200" },
-              { Icon: Clock, text: "First bid within 2h", color: "text-violet-700 bg-violet-50 border-violet-200" },
-              { Icon: ShieldCheck, text: "ACA, ACCA & CTA verified", color: "text-blue-700 bg-blue-50 border-blue-200" },
-            ].map(({ Icon, text, color }) => (
-              <span key={text} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-semibold ${color}`}>
-                <Icon className="h-3.5 w-3.5 shrink-0" />{text}
+          <div className="flex flex-wrap gap-2 pt-2">
+            {["Verified credentials", "Built for ongoing relationships", "Quiet confidence — not a race to the bottom"].map((lab) => (
+              <span
+                key={lab}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border/40 bg-card/60 text-xs text-muted-foreground">
+                <ShieldCheck className="h-3 w-3 text-teal-600 shrink-0 opacity-80" />
+                {lab}
               </span>
             ))}
           </div>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex gap-8">
-
-          {/* Sidebar */}
-          <aside className="hidden lg:flex flex-col gap-6 w-52 shrink-0">
-            <div className="sticky top-24 space-y-5">
-              <SidebarSection title="Availability">
-                {[
-                  { value: "all", label: "Any Availability" },
-                  { value: "available", label: "Active now" },
-                  { value: "limited", label: "Replies within 2h" },
-                  { value: "unavailable", label: "Recently online" },
-                ].map(opt => (
-                  <FilterBtn key={opt.value} active={availability === opt.value} onClick={() => setAvailability(opt.value)}>
-                    {opt.label}
-                  </FilterBtn>
-                ))}
-              </SidebarSection>
-
-              <SidebarSection title="Qualification">
-                <FilterBtn active={!selectedQual} onClick={() => setSelectedQual(null)}>Any Qualification</FilterBtn>
-                {QUALIFICATIONS.map(q => (
-                  <FilterBtn key={q} active={selectedQual === q} onClick={() => handleQualClick(q)}>{q}</FilterBtn>
-                ))}
-              </SidebarSection>
-
-              <SidebarSection title="Specialisation">
-                <FilterBtn active={!selectedSpec} onClick={() => setSelectedSpec(null)}>Any Specialisation</FilterBtn>
-                {SPECIALISATIONS.map(s => (
-                  <FilterBtn key={s} active={selectedSpec === s} onClick={() => handleSpecClick(s)}>{s}</FilterBtn>
-                ))}
-              </SidebarSection>
-
-              <SidebarSection title="Location">
-                <FilterBtn active={!selectedLocation} onClick={() => setSelectedLocation(null)}>All UK</FilterBtn>
-                {allLocations.map(loc => (
-                  <FilterBtn key={loc} active={selectedLocation === loc} onClick={() => handleLocationClick(loc)}>{loc}</FilterBtn>
-                ))}
-              </SidebarSection>
-
-              <SidebarSection title="Hourly Rate">
-                {RATE_BANDS.map((b, i) => (
-                  <FilterBtn key={i} active={rateBand === i} onClick={() => setRateBand(i)}>{b.label}</FilterBtn>
-                ))}
-              </SidebarSection>
-
-              <SidebarSection title="Experience">
-                {EXP_LEVELS.map((e, i) => (
-                  <FilterBtn key={i} active={expLevel === i} onClick={() => setExpLevel(i)}>{e.label}</FilterBtn>
-                ))}
-              </SidebarSection>
-
-              <SidebarSection title="Work Type">
-                <FilterBtn active={!remoteOnly} onClick={() => setRemoteOnly(false)}>All Professionals</FilterBtn>
-                <FilterBtn active={remoteOnly} onClick={() => setRemoteOnly(true)}>
-                  <span className="flex items-center gap-1.5"><Wifi className="h-3.5 w-3.5" />Remote Only</span>
-                </FilterBtn>
-              </SidebarSection>
-
-              {hasFilters && (
-                <button onClick={clearAll} className="text-xs text-muted-foreground hover:text-destructive flex items-center gap-1 transition-colors">
-                  <X className="h-3 w-3" /> Clear all filters
-                </button>
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-12">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <p className="text-sm text-muted-foreground">
+              <span className="font-medium text-foreground">{filtered.length}</span>
+              {" "}
+              {filtered.length === 1 ? "adviser" : "advisers"}
+              {activeNeed ? (
+                <span className="text-muted-foreground"> · shown with your situation in mind</span>
+              ) : (
+                <span className="text-muted-foreground"> · for you to explore at your pace</span>
               )}
-
-              <LiveFeed />
-            </div>
-          </aside>
-
-          {/* Main */}
-          <div className="flex-1 min-w-0">
-            {/* Active filter chips */}
-            {hasFilters && (
-              <div className="flex flex-wrap gap-2 mb-4">
-                {selectedQual && (
-                  <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-semibold border border-primary/20">
-                    {selectedQual} <button onClick={() => setSelectedQual(null)}><X className="h-3 w-3" /></button>
-                  </span>
-                )}
-                {selectedSpec && (
-                  <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-violet-100 text-violet-700 text-xs font-semibold border border-violet-200">
-                    {selectedSpec} <button onClick={() => setSelectedSpec(null)}><X className="h-3 w-3" /></button>
-                  </span>
-                )}
-                {selectedLocation && (
-                  <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs font-semibold border border-emerald-200">
-                    {selectedLocation} <button onClick={() => setSelectedLocation(null)}><X className="h-3 w-3" /></button>
-                  </span>
-                )}
-              </div>
-            )}
-
-            {/* Mobile chips */}
-            <div className="lg:hidden flex flex-wrap gap-2 mb-5">
-              <span className="text-xs text-muted-foreground self-center flex items-center gap-1">
-                <SlidersHorizontal className="h-3.5 w-3.5" />Filters:
-              </span>
-              {QUALIFICATIONS.map(q => (
-                <button key={q} onClick={() => handleQualClick(q)}
-                  className={`px-3 py-1 rounded-full text-xs font-semibold border transition-all ${selectedQual === q ? "bg-primary text-primary-foreground border-primary" : "bg-card text-muted-foreground border-border"}`}>{q}</button>
-              ))}
-              <button onClick={() => setRemoteOnly(!remoteOnly)}
-                className={`px-3 py-1 rounded-full text-xs font-medium border flex items-center gap-1 transition-all ${remoteOnly ? "bg-primary text-primary-foreground border-primary" : "bg-card text-muted-foreground border-border"}`}>
-                <Wifi className="h-3 w-3" />Remote
-              </button>
-              {hasFilters && (
-                <button onClick={clearAll} className="px-3 py-1 rounded-full text-xs font-medium border border-destructive/30 text-destructive flex items-center gap-1">
-                  <X className="h-3 w-3" />Clear
-                </button>
-              )}
-            </div>
-
-            <div className="flex items-center justify-between mb-5">
-              <p className="text-sm text-muted-foreground">
-                {filtered.length} professional{filtered.length !== 1 ? "s" : ""} found
+            </p>
+            {savedIds.length > 0 && (
+              <p className="text-xs text-rose-600 font-medium mt-1 flex items-center gap-1">
+                <Heart className="h-3.5 w-3.5 fill-rose-500" />{savedIds.length} saved
               </p>
-              {savedIds.length > 0 && (
-                <span className="flex items-center gap-1 text-xs text-rose-500 font-semibold">
-                  <Heart className="h-3.5 w-3.5 fill-rose-500" />{savedIds.length} saved
-                </span>
-              )}
-            </div>
-
-            {filtered.length === 0 ? (
-              <div className="text-center py-20 bg-card border border-border/60 rounded-2xl px-6">
-                <Users className="h-12 w-12 text-muted-foreground/25 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-foreground mb-2">No professionals match your filters</h3>
-                <p className="text-muted-foreground mb-6 text-sm">Try adjusting your filters or search terms.</p>
-                <div className="flex flex-wrap justify-center gap-3">
-                  <Button variant="outline" onClick={clearAll} className="rounded-xl">Clear all filters</Button>
-                  <Link to="/post-job">
-                    <Button className="rounded-xl">Post a Project Instead</Button>
-                  </Link>
-                </div>
-                <div className="mt-8">
-                  <p className="text-sm font-semibold text-foreground mb-4">Recommended professionals</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    {allProfessionals.slice(0, 3).map((p, i) => {
-                      const initials = p.full_name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
-                      const grad = GRAD[i % GRAD.length];
-                      return (
-                        <Link key={p.id} to={`/professionals/${p.slug}`}
-                          className="flex items-center gap-2 p-3 bg-background border border-border/60 rounded-xl hover:border-primary/40 transition-all text-left">
-                          <div className={`h-9 w-9 rounded-lg bg-gradient-to-br ${grad} flex items-center justify-center text-white text-xs font-bold shrink-0`}>{initials}</div>
-                          <div className="min-w-0">
-                            <p className="text-xs font-semibold text-foreground truncate">{p.full_name}</p>
-                            <p className="text-[10px] text-muted-foreground truncate">{p.location} · £{p.hourly_rate}/hr</p>
-                          </div>
-                        </Link>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-                {filtered.map((profile, i) => (
-                  <motion.div key={profile.id}
-                    initial={{ opacity: 0, y: 16 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.28, delay: Math.min(i * 0.05, 0.3) }}>
-                    <ProfCard profile={profile} featured={i === 0 && !hasFilters} idx={i} savedIds={savedIds} onToggleSave={toggleSave} />
-                  </motion.div>
-                ))}
-              </div>
             )}
           </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {hasFilters && (
+              <Button type="button" variant="ghost" size="sm" className="rounded-xl text-muted-foreground" onClick={clearAll}>
+                <X className="h-3.5 w-3.5 mr-1" /> Reset
+              </Button>
+            )}
+            <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+              <SheetTrigger asChild>
+                <Button type="button" variant="outline" className="rounded-xl gap-2 border-border/80 shadow-sm">
+                  <PanelRight className="h-4 w-4" />
+                  Refine
+                  {filterCount > 0 && (
+                    <span className="ml-1 rounded-full bg-primary text-primary-foreground text-[10px] font-bold px-1.5 py-0.5 min-w-[1.25rem]">
+                      {filterCount}
+                    </span>
+                  )}
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto">
+                <SheetHeader>
+                  <SheetTitle>Refine your search</SheetTitle>
+                  <SheetDescription>
+                    Optional filters. Start with your situation above — then narrow by credential, region, or typical engagement level.
+                  </SheetDescription>
+                </SheetHeader>
+                {filtersUi}
+                <div className="pt-6 border-t mt-6">
+                  <Button type="button" className="w-full rounded-xl" onClick={() => setSheetOpen(false)}>
+                    Show results
+                  </Button>
+                </div>
+              </SheetContent>
+            </Sheet>
+          </div>
         </div>
+
+        {(selectedQual || selectedSpec || selectedLocation) && (
+          <div className="flex flex-wrap gap-2">
+            {selectedQual && (
+              <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-secondary text-xs font-medium border">
+                {selectedQual}
+                <button type="button" aria-label="Remove" onClick={() => setSelectedQual(null)}><X className="h-3 w-3" /></button>
+              </span>
+            )}
+            {selectedSpec && (
+              <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-secondary text-xs font-medium border">
+                {selectedSpec}
+                <button type="button" aria-label="Remove" onClick={() => setSelectedSpec(null)}><X className="h-3 w-3" /></button>
+              </span>
+            )}
+            {selectedLocation && (
+              <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-secondary text-xs font-medium border">
+                {selectedLocation}
+                <button type="button" aria-label="Remove" onClick={() => setSelectedLocation(null)}><X className="h-3 w-3" /></button>
+              </span>
+            )}
+          </div>
+        )}
+
+        {filtered.length === 0 ? (
+          <div className="text-center py-20 bg-muted/25 border border-border/50 rounded-2xl px-6 space-y-4">
+            <Users className="h-11 w-11 text-muted-foreground/35 mx-auto" />
+            <h3 className="text-lg font-semibold text-foreground">No advisers match yet</h3>
+            <p className="text-muted-foreground text-sm max-w-md mx-auto">
+              Try another situation above, loosen Refine filters, clear your description, or post a brief so advisers come to you.
+            </p>
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button type="button" variant="outline" className="rounded-xl" onClick={clearAll}>Reset search</Button>
+              <Button asChild className="rounded-xl">
+                <Link to="/post-job">Post a project</Link>
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {recommended.length > 0 && (
+              <section className="space-y-6">
+                <div className="space-y-2">
+                  <h2 className="text-lg font-semibold text-foreground tracking-tight">
+                    {needLabel ? `A strong fit for · ${needLabel}` : "Advisers worth a closer look"}
+                  </h2>
+                  <p className="text-sm text-muted-foreground leading-relaxed max-w-2xl">
+                    A starting point based on your situation — not a mechanical score. Take your time; the right relationship matters more than ticking every box.
+                  </p>
+                </div>
+                <div className="grid gap-8">
+                  {recommended.map((p, i) => (
+                    <DiscoveryCard
+                      key={p.id}
+                      profile={p}
+                      variant="large"
+                      idx={i}
+                      savedIds={savedIds}
+                      onToggleSave={toggleSave}
+                      activeNeed={activeNeed}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            <section className="space-y-5">
+              {rest.length > 0 && (
+                <>
+                  <h2 className="text-base font-semibold text-foreground">More advisers</h2>
+                  <div className="grid grid-cols-1 gap-8">
+                    {rest.map((p, i) => (
+                      <DiscoveryCard
+                        key={p.id}
+                        profile={p}
+                        variant="default"
+                        idx={i + recommended.length}
+                        savedIds={savedIds}
+                        onToggleSave={toggleSave}
+                        activeNeed={activeNeed}
+                      />
+                    ))}
+                  </div>
+                </>
+              )}
+            </section>
+          </>
+        )}
       </div>
     </div>
   );

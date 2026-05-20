@@ -64,44 +64,65 @@ function getCompetitivenessBand(score) {
     return {
       min: 75,
       max: 90,
-      label: "High chance",
+      label: "Strong market fit",
+      marketFitLabel: "Strong market fit",
+      marketFitDetail: "Well aligned with similar successful bids on TaxLink.",
       tone: "high",
-      summary: "High chance, but still dependent on client preference and final comparison.",
+      summary: "Scope, pricing, and profile signals align well with this project.",
     };
   }
   if (score >= 70) {
     return {
       min: 60,
       max: 75,
-      label: "Strong position",
+      label: "Strong market fit",
+      marketFitLabel: "Strong market fit",
+      marketFitDetail: "Well aligned with similar successful bids on TaxLink.",
       tone: "strong",
-      summary: "Strong position. Your bid has several signals clients usually shortlist.",
+      summary: "A clear, professional quote should compete well here.",
     };
   }
   if (score >= 54) {
     return {
       min: 45,
       max: 60,
-      label: "Competitive",
+      label: "Good fit",
+      marketFitLabel: "Good fit",
+      marketFitDetail: "Comparable to typical winning quotes for this type of work.",
       tone: "competitive",
-      summary: "Competitive. Improve pricing, proposal detail, or response speed to stand out.",
+      summary: "Strengthen your proposal or pricing to stand out.",
     };
   }
   if (score >= 36) {
     return {
       min: 30,
       max: 45,
-      label: "Outside chance",
+      label: "Worth a considered quote",
+      marketFitLabel: "Worth a considered quote",
+      marketFitDetail: "Review scope and pricing before submitting.",
       tone: "watch",
-      summary: "Outside chance. A few factors are holding the bid back.",
+      summary: "A few factors may need attention before you quote.",
     };
   }
   return {
     min: 20,
     max: 35,
-    label: "Low chance",
+    label: "Review before quoting",
+    marketFitLabel: "Review before quoting",
+    marketFitDetail: "Pricing or proposal detail may need adjustment for this project.",
     tone: "low",
-    summary: "Low chance. This bid is unlikely to compete without changes.",
+    summary: "Check budget, scope, and your approach before committing time.",
+  };
+}
+
+/** Human-readable market fit — no percentage ranges in primary UI */
+export function getMarketFitPresentation(result) {
+  if (!result) return null;
+  const band = result.probabilityRange || {};
+  return {
+    label: band.marketFitLabel || result.label || "Market fit",
+    detail: band.marketFitDetail || result.summary,
+    tone: band.tone || "competitive",
   };
 }
 
@@ -438,7 +459,9 @@ export function computeBidCompetitiveness({
   return {
     score,
     probabilityRange: band,
-    displayRange: `${band.min}-${band.max}%`,
+    displayRange: null,
+    marketFitLabel: band.marketFitLabel,
+    marketFitDetail: band.marketFitDetail,
     label: band.label,
     summary: band.summary,
     factors: {

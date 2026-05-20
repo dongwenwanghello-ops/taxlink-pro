@@ -8,12 +8,23 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { base44 } from "@/api/base44Client";
 import { saveBid } from "@/lib/bidStore";
+import { setSessionProfessionalEmail } from "@/lib/workspaceAccess";
 import BidIntelligence from "@/components/shared/BidIntelligence";
 import { DemoBadge } from "@/lib/demoModeDetector.jsx";
-import { getMinimumIncrement, validateBidIncrement } from "@/lib/biddingIncrementEngine";
 import { useBiddingCountdown } from "@/hooks/useBiddingCountdown";
 import { scoreMarketplaceProject } from "@/lib/marketplaceIntelligence";
+import { getQuoteAlignmentSignal } from "@/lib/guidedPricing";
+import GuidedPricingPanel from "@/components/shared/GuidedPricingPanel";
 import { useToast } from "@/components/ui/use-toast";
+import {
+  PROPOSAL_TONES,
+  MAX_PROPOSAL_VERSIONS,
+  getToneById,
+  getNextToneId,
+  generateProposalSuggestion,
+  resolveProposalOutput,
+} from "@/lib/proposalAssistant";
+import { buildBidIdentityFromSources } from "@/lib/professionalIdentity";
 
 const TIMELINE_OPTIONS = [
   { value: "24h", label: "Within 24 hours", hint: "Best for urgent/simple requests", urgency: "high" },
@@ -51,38 +62,6 @@ const CATEGORY_LABELS = {
   other: "UK tax and accounting",
 };
 
-function cleanProposalText(value) {
-  return String(value || "")
-    .replace(/^["'`]+|["'`]+$/g, "")
-    .replace(/^proposal:\s*/i, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function buildFallbackProposal({ proposal, job, qualifications, yearsExperience, mode }) {
-  const category = CATEGORY_LABELS[job.category] || CATEGORY_LABELS.other;
-  const credentialText = [
-    qualifications.length ? `${qualifications.join(" and ")}-qualified` : "",
-    yearsExperience ? `with ${yearsExperience} of experience` : "",
-  ].filter(Boolean).join(" ");
-  const intro = credentialText
-    ? `I am a ${credentialText} tax and accounting professional`
-    : "I am a UK tax and accounting professional";
-  const projectLine = `I can support this ${category} project with a clear, practical approach and keep you updated throughout.`;
-  const source = cleanProposalText(proposal);
-  const note = source
-    ? `Based on your notes, I will focus on ${source.replace(/\.$/, "")}.`
-    : "I will review the information provided, confirm the scope, and agree the next steps before starting.";
-  const urgencyLine = job.urgency === "asap" || job.urgency === "urgent"
-    ? "I can prioritise a prompt turnaround and flag any issues early."
-    : "I would be happy to agree a sensible timeline and deliver the work carefully.";
-  const base = `${intro}. ${projectLine} ${note} ${urgencyLine}`;
-
-  if (mode === "shorten") return `${intro}. I can assist with this ${category} project and provide clear, practical support within the agreed timeline.`;
-  if (mode === "friendlier") return `${intro}. I would be very happy to help with this ${category} project, explain the process clearly, and provide practical support from start to finish.`;
-  return base;
-}
-
 function getProposalQuality({ proposal, qualifications, yearsExperience, amount, budgetAmount }) {
   const text = proposal.trim();
   const words = text.split(/\s+/).filter(Boolean).length;
@@ -110,15 +89,16 @@ function getProposalQuality({ proposal, qualifications, yearsExperience, amount,
 
 const formatCurrency = (value) => `£${Math.round(value).toLocaleString()}`;
 
-function getCompetitiveSignal(amount, budgetAmount) {
-  if (!amount || Number(amount) <= 0) return null;
-  const n = Number(amount);
-  if (!budgetAmount) return { label: "Competitive bid — no budget cap set", color: "text-blue-600", bg: "bg-blue-50 border-blue-200", icon: TrendingUp, winChance: "Medium", advice: "Add a strong proposal to stand out." };
-  const ratio = n / budgetAmount;
-  if (ratio <= 0.85) return { label: "Very competitive quote — high chance to win", color: "text-emerald-700", bg: "bg-emerald-50 border-emerald-200", icon: TrendingUp, winChance: "High", advice: "Your price is well below the starting budget — strong position." };
-  if (ratio <= 1.0)  return { label: "Competitive quote — within expected range",  color: "text-blue-700",    bg: "bg-blue-50 border-blue-200",    icon: TrendingUp, winChance: "Good", advice: "Competitive price. A clear proposal will secure the win." };
-  if (ratio <= 1.3)  return { label: "Slightly above market — strong proposal needed", color: "text-amber-700", bg: "bg-amber-50 border-amber-200", icon: AlertCircle, winChance: "Medium", advice: "Justify your rate with specific experience and fast delivery." };
-  return { label: "High quote — your proposal must lead on value", color: "text-rose-700", bg: "bg-rose-50 border-rose-200", icon: AlertCircle, winChance: "Lower", advice: "Emphasise your qualifications and delivery speed to compete." };
+function getQuoteSignal(amount, job, marketplaceScore) {
+  const alignment = getQuoteAlignmentSignal(amount, job, marketplaceScore);
+  if (!alignment) return null;
+  const styles = {
+    positive: { color: "text-emerald-700", bg: "bg-emerald-50 border-emerald-200", icon: TrendingUp },
+    warning: { color: "text-amber-700", bg: "bg-amber-50 border-amber-200", icon: AlertCircle },
+    neutral: { color: "text-blue-700", bg: "bg-blue-50 border-blue-200", icon: TrendingUp },
+  };
+  const s = styles[alignment.tone] || styles.neutral;
+  return { label: alignment.label, advice: alignment.detail, ...s };
 }
 
 function getMissingFields(amount, timeline, proposal) {
@@ -143,32 +123,22 @@ export default function BidModal({ job, onClose, onBidSubmitted, onSubmitSuccess
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [touched, setTouched] = useState({ amount: false, timeline: false, proposal: false });
   const [savedBid, setSavedBid] = useState(null);
-  const [existingBids, setExistingBids] = useState([]);
-  const [incrementValidation, setIncrementValidation] = useState(null);
   const [professionalProfile, setProfessionalProfile] = useState(null);
   const [credentialsOpen, setCredentialsOpen] = useState(false);
   const [selectedQualifications, setSelectedQualifications] = useState([]);
   const [yearsExperience, setYearsExperience] = useState("");
   const [enhancingProposal, setEnhancingProposal] = useState(false);
   const [proposalSuggestion, setProposalSuggestion] = useState("");
-  const [proposalSuggestionMode, setProposalSuggestionMode] = useState("");
+  const [selectedProposalTone, setSelectedProposalTone] = useState("professional");
+  const [activeProposalToneId, setActiveProposalToneId] = useState("professional");
+  const [proposalVersion, setProposalVersion] = useState(0);
+  const [proposalGenerationCount, setProposalGenerationCount] = useState(0);
+  const [previousProposalSuggestions, setPreviousProposalSuggestions] = useState([]);
+  const [proposalLoadingMessage, setProposalLoadingMessage] = useState("");
   const { isOpen: biddingOpen } = useBiddingCountdown(job, {
     startDate: job.created_date,
     biddingPeriod: job.bidding_period,
   });
-
-  // Load existing bids to check increment validation
-  useEffect(() => {
-    const loadBids = async () => {
-      try {
-        const bids = await base44.entities.Bid.filter({ project_id: job.id }, "-amount", 100);
-        setExistingBids(bids || []);
-      } catch {
-        setExistingBids([]);
-      }
-    };
-    loadBids();
-  }, [job.id]);
 
   useEffect(() => {
     try {
@@ -188,27 +158,9 @@ export default function BidModal({ job, onClose, onBidSubmitted, onSubmitSuccess
     }
   }, []);
 
-  // Validate bid increment whenever amount changes
-  useEffect(() => {
-    if (!amount || Number(amount) <= 0) {
-      setIncrementValidation(null);
-      return;
-    }
-    
-    const lowestExistingBid = existingBids.length > 0 ? Math.min(...existingBids.map(b => b.amount)) : null;
-    
-    if (lowestExistingBid) {
-      const validation = validateBidIncrement(Number(amount), lowestExistingBid);
-      setIncrementValidation(validation);
-    } else {
-      setIncrementValidation(null);
-    }
-  }, [amount, existingBids]);
-
   const missingFields = getMissingFields(amount, timeline, proposal);
-  const canSubmit = biddingOpen && missingFields.length === 0 && (!incrementValidation || incrementValidation.valid);
-  const signal = useMemo(() => getCompetitiveSignal(amount, job.budget_amount), [amount, job.budget_amount]);
-  const estimatedBudgetRange = useMemo(() => scoreMarketplaceProject({
+  const canSubmit = biddingOpen && missingFields.length === 0;
+  const marketplaceScore = useMemo(() => scoreMarketplaceProject({
     category: job.category,
     complexity: job.complexity || "medium",
     urgency: job.urgency || "negotiable",
@@ -221,7 +173,9 @@ export default function BidModal({ job, onClose, onBidSubmitted, onSubmitSuccess
     estimatedWorkload: job.estimated_workload,
     deadlinePressure: job.deadline_pressure,
     descriptionLength: job.description?.length || 0,
-  }).recommendedBudgetRange, [job]);
+  }), [job]);
+  const estimatedBudgetRange = marketplaceScore?.recommendedBudgetRange;
+  const signal = useMemo(() => getQuoteSignal(amount, job, marketplaceScore), [amount, job, marketplaceScore]);
   const proposalLength = proposal.trim().length;
   const proposalOk = proposalLength >= 20;
 
@@ -248,47 +202,76 @@ export default function BidModal({ job, onClose, onBidSubmitted, onSubmitSuccess
     );
   };
 
-  const handleEnhanceProposal = async (mode = "professional") => {
-    setEnhancingProposal(true);
-    setProposalSuggestionMode(mode);
+  const handleEnhanceProposal = async ({ regenerate = false, toneOverride } = {}) => {
+    if (enhancingProposal) return;
 
-    const fallback = buildFallbackProposal({
+    const nextCount = proposalGenerationCount + 1;
+    const toneId = regenerate
+      ? getNextToneId(activeProposalToneId || selectedProposalTone, nextCount)
+      : (toneOverride || selectedProposalTone);
+    const tone = getToneById(toneId);
+    const variantIndex = nextCount + Math.floor(Math.random() * 3);
+
+    setEnhancingProposal(true);
+    setProposalLoadingMessage(regenerate ? "Generating new version…" : tone.loadingMessage);
+    setActiveProposalToneId(toneId);
+    if (regenerate) setSelectedProposalTone(toneId);
+
+    const fallbackParams = {
       proposal,
       job,
       qualifications: selectedQualifications,
       yearsExperience,
-      mode,
-    });
+      toneId,
+      variantIndex,
+    };
+
+    const priorTexts = regenerate && proposalSuggestion
+      ? [...previousProposalSuggestions, proposalSuggestion].slice(-3)
+      : previousProposalSuggestions;
 
     try {
-      const prompt = [
-        "Rewrite the bid proposal below for a UK tax/accounting marketplace.",
-        "Return only the finished proposal text. No heading, no bullet list, no explanation.",
-        "Keep it concise, human-written, commercially realistic, and professional.",
-        "Improve grammar, sentence flow, readability, and confidence without sounding robotic.",
-        "Naturally incorporate credentials and experience if supplied.",
-        "Do not overpromise. Do not invent qualifications, certifications, client outcomes, fees, or availability.",
-        mode === "shorten" ? "Make it shorter, around 45-65 words." : "",
-        mode === "friendlier" ? "Make it warmer and approachable while still professional." : "",
-        mode === "more_professional" ? "Make the tone more senior and polished." : "",
-        "",
-        `Project title: ${job.title || "Untitled project"}`,
-        `Project category: ${CATEGORY_LABELS[job.category] || job.category || "UK tax/accounting"}`,
-        `Project complexity: ${job.complexity || "medium"}`,
-        `Project urgency: ${job.urgency || "standard"}`,
-        `Selected credentials: ${selectedQualifications.length ? selectedQualifications.join(", ") : "None selected"}`,
-        `Experience: ${yearsExperience || "Not provided"}`,
-        `Current rough proposal/notes: ${proposal || "No notes provided"}`,
-      ].filter(Boolean).join("\n");
+      const generated = await generateProposalSuggestion({
+        base44Client: base44,
+        job,
+        proposal,
+        qualifications: selectedQualifications,
+        yearsExperience,
+        toneId,
+        variantIndex,
+        previousSuggestions: priorTexts,
+        regenerate,
+      });
 
-      const result = await base44.integrations.Core.InvokeLLM({ prompt });
-      const text = cleanProposalText(typeof result === "string" ? result : result?.text || result?.content || "");
-      setProposalSuggestion(text || fallback);
+      const { text } = resolveProposalOutput({
+        generatedText: generated,
+        fallbackParams,
+        previousSuggestions: priorTexts,
+        variantIndex,
+      });
+
+      setProposalSuggestion(text);
+      setProposalVersion(((nextCount - 1) % MAX_PROPOSAL_VERSIONS) + 1);
+      setProposalGenerationCount(nextCount);
+      setPreviousProposalSuggestions((current) => [...current, text].slice(-3));
+      base44.analytics.track({
+        eventName: regenerate ? "ai_proposal_regenerated" : "ai_proposal_generated",
+        properties: { tone: toneId, version: nextCount },
+      });
     } catch (err) {
       console.warn("[BidModal] proposal enhancement failed, using fallback", err);
-      setProposalSuggestion(fallback);
+      const { text } = resolveProposalOutput({
+        generatedText: "",
+        fallbackParams: { ...fallbackParams, variantIndex: variantIndex + 1 },
+        previousSuggestions: priorTexts,
+        variantIndex: variantIndex + 1,
+      });
+      setProposalSuggestion(text);
+      setProposalVersion(((nextCount - 1) % MAX_PROPOSAL_VERSIONS) + 1);
+      setProposalGenerationCount(nextCount);
     } finally {
       setEnhancingProposal(false);
+      setProposalLoadingMessage("");
     }
   };
 
@@ -308,7 +291,6 @@ export default function BidModal({ job, onClose, onBidSubmitted, onSubmitSuccess
       proposalLength,
       biddingOpen,
       missingFields,
-      incrementValidation,
     });
     setSubmitAttempted(true);
     setTouched({ amount: true, timeline: true, proposal: true });
@@ -316,16 +298,16 @@ export default function BidModal({ job, onClose, onBidSubmitted, onSubmitSuccess
       console.warn("[BidModal] validation blocked submission", {
         missingFields,
         biddingOpen,
-        incrementValidation,
       });
       return;
     }
     setSubmitting(true);
     try {
-      let bidderName = "";
+      let bidderEmail = "";
+      let authUser = null;
       try {
-        const user = await base44.auth.me();
-        bidderName = user?.full_name || user?.email || "";
+        authUser = await base44.auth.me();
+        bidderEmail = authUser?.email || "";
       } catch {}
 
       const professionalCredentials = {
@@ -335,6 +317,19 @@ export default function BidModal({ job, onClose, onBidSubmitted, onSubmitSuccess
         specialisations: professionalProfile?.specialisations || [],
         user_role: professionalProfile?.user_role || localStorage.getItem("user_role") || "professional",
       };
+
+      const identityFields = buildBidIdentityFromSources({
+        fullName: professionalProfile?.legal_name || professionalProfile?.full_name || authUser?.full_name || "",
+        displayName: professionalProfile?.display_name || "",
+        qualifications: selectedQualifications,
+        yearsExperience,
+        firmName: professionalProfile?.firm_name || professionalProfile?.company_name || "",
+        email: bidderEmail,
+        phone: professionalProfile?.phone || "",
+        linkedin: professionalProfile?.linkedin || professionalProfile?.linkedin_url || "",
+        headline: professionalProfile?.headline || professionalProfile?.title || "",
+      });
+
       const bidPayload = {
         project_id: job.id,
         project_title: job.title,
@@ -342,7 +337,7 @@ export default function BidModal({ job, onClose, onBidSubmitted, onSubmitSuccess
         timeline,
         timeline_label: TIMELINE_LABELS[timeline] || timeline,
         proposal,
-        bidder_name: bidderName,
+        ...identityFields,
         bidder_headline: professionalProfile?.headline || professionalProfile?.title || "",
         bidder_bio: professionalProfile?.bio || "",
         bidder_specialisms: professionalProfile?.specialisations || [],
@@ -372,7 +367,10 @@ export default function BidModal({ job, onClose, onBidSubmitted, onSubmitSuccess
         window.dispatchEvent(new CustomEvent("bidSubmitted", { detail: bid }));
       } catch (err) {
         console.warn("[BidModal] backend bid create failed, saving locally", err);
-        bid = saveBid(bidPayload);
+        bid = saveBid({ ...bidPayload, bidder_email: bidderEmail || bidPayload.bidder_email });
+      }
+      if (bidderEmail || bid?.bidder_email) {
+        setSessionProfessionalEmail(bidderEmail || bid.bidder_email);
       }
       setSavedBid(bid);
       console.debug("[BidModal] bid submitted successfully", bid);
@@ -419,7 +417,7 @@ export default function BidModal({ job, onClose, onBidSubmitted, onSubmitSuccess
               </div>
               <div>
                 <p className="text-sm font-bold text-foreground flex items-center gap-2">
-                 Submit Your Quote
+                 Send Quick Quote
                  {job._user_posted === false && <DemoBadge />}
                </p>
                 <p className="text-xs text-muted-foreground truncate max-w-[260px]">{job.title}</p>
@@ -444,21 +442,12 @@ export default function BidModal({ job, onClose, onBidSubmitted, onSubmitSuccess
                     </div>
                   )}
 
-                  <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-violet-50 border border-violet-200 text-xs">
-                    <span className="h-1.5 w-1.5 rounded-full bg-violet-500 animate-pulse shrink-0" />
-                    <div className="text-violet-700 font-medium space-y-1">
-                      <p>
-                        {job.budget_amount
-                          ? `Starting bid: £${job.budget_amount.toLocaleString()}`
-                          : `Estimated budget: ${formatCurrency(estimatedBudgetRange.min)}-${formatCurrency(estimatedBudgetRange.max)}`}
-                      </p>
-                      {existingBids.length > 0 && (
-                        <p className="text-violet-600 text-[11px]">
-                          Minimum bid change: £{getMinimumIncrement(Math.min(...existingBids.map(b => b.amount)))}
-                        </p>
-                      )}
-                    </div>
-                  </div>
+                  <GuidedPricingPanel job={job} marketplaceScore={marketplaceScore} compact />
+                  {job.budget_amount ? (
+                    <p className="text-xs text-muted-foreground px-1">
+                      Client opening budget: £{job.budget_amount.toLocaleString()} — price against market guidance, not other quotes.
+                    </p>
+                  ) : null}
                   {!biddingOpen && (
                     <div className="rounded-xl bg-slate-100 border border-slate-200 p-3 text-xs text-slate-700">
                       <p className="font-bold">Bidding is closed for this project.</p>
@@ -478,22 +467,13 @@ export default function BidModal({ job, onClose, onBidSubmitted, onSubmitSuccess
                         className={`pl-7 font-semibold text-base ${showAmountError && (!amount || Number(amount) <= 0) ? "border-rose-400 focus-visible:ring-rose-400" : ""}`}
                       />
                     </div>
-                    {incrementValidation && existingBids.length > 0 && !incrementValidation.valid && (
+                    {signal && amount && Number(amount) > 0 && (
                       <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
-                        className="flex items-start gap-2 px-2.5 py-1.5 rounded-lg border border-rose-200 bg-rose-50 text-xs text-rose-700">
-                        <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                        <div>
-                          <p className="font-semibold">{incrementValidation.message}</p>
-                          <p className="text-[11px] opacity-80 mt-0.5">
-                            Current: £{incrementValidation.nextValidRange.current.toLocaleString()} · Next valid bids: £{incrementValidation.nextValidRange.min.toLocaleString()} or £{incrementValidation.nextValidRange.max.toLocaleString()}+
-                          </p>
+                        className={`flex flex-col gap-1 px-2.5 py-1.5 rounded-lg border text-xs ${signal.bg} ${signal.color}`}>
+                        <div className="flex items-center gap-1.5 font-semibold">
+                          <signal.icon className="h-3.5 w-3.5 shrink-0" />{signal.label}
                         </div>
-                      </motion.div>
-                    )}
-                    {signal && amount && Number(amount) > 0 && (!incrementValidation || incrementValidation.valid) && (
-                      <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
-                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold ${signal.bg} ${signal.color}`}>
-                        <signal.icon className="h-3.5 w-3.5 shrink-0" />{signal.label}
+                        <p className="text-[11px] opacity-90 font-normal">{signal.advice}</p>
                       </motion.div>
                     )}
                     {showAmountError && (!amount || Number(amount) <= 0) && (
@@ -559,65 +539,87 @@ export default function BidModal({ job, onClose, onBidSubmitted, onSubmitSuccess
                       </div>
                     </div>
 
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="rounded-xl border border-violet-100 bg-violet-50/40 p-3 space-y-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-semibold text-violet-900 flex items-center gap-1.5">
+                          <Sparkles className="h-3.5 w-3.5" />
+                          AI proposal assistant
+                        </p>
+                        <span className="text-[10px] text-violet-700">Project-specific · {MAX_PROPOSAL_VERSIONS} styles</span>
+                      </div>
+                      <div className="space-y-1.5">
+                        <p className="text-[11px] font-medium text-muted-foreground">Proposal tone</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {PROPOSAL_TONES.map((tone) => (
+                            <button
+                              key={tone.id}
+                              type="button"
+                              disabled={enhancingProposal}
+                              onClick={() => setSelectedProposalTone(tone.id)}
+                              className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition-colors ${
+                                selectedProposalTone === tone.id
+                                  ? "border-violet-400 bg-violet-100 text-violet-900"
+                                  : "border-border bg-white/80 text-foreground hover:border-violet-200"
+                              }`}
+                            >
+                              {tone.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
-                        onClick={() => handleEnhanceProposal("professional")}
+                        onClick={() => handleEnhanceProposal({ regenerate: false })}
                         disabled={enhancingProposal}
-                        className="h-8 rounded-lg text-xs gap-1.5"
+                        className="h-8 rounded-lg text-xs gap-1.5 border-violet-200 text-violet-800 hover:bg-violet-100"
                       >
-                        {enhancingProposal && proposalSuggestionMode === "professional" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
-                        Improve Proposal
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleEnhanceProposal("more_professional")}
-                        disabled={enhancingProposal}
-                        className="h-8 rounded-lg text-xs gap-1.5"
-                      >
-                        <Sparkles className="h-3 w-3" />
-                        More Professional
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleEnhanceProposal("shorten")}
-                        disabled={enhancingProposal}
-                        className="h-8 rounded-lg text-xs"
-                      >
-                        Shorten
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleEnhanceProposal("friendlier")}
-                        disabled={enhancingProposal}
-                        className="h-8 rounded-lg text-xs"
-                      >
-                        Friendlier
+                        {enhancingProposal ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
+                        {enhancingProposal ? "Generating…" : "Generate with AI"}
                       </Button>
                     </div>
 
                     <AnimatePresence initial={false}>
-                      {proposalSuggestion && (
+                      {enhancingProposal && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -4 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -4 }}
+                          className="flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2.5"
+                        >
+                          <Loader2 className="h-4 w-4 animate-spin text-violet-600 shrink-0" />
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold text-violet-900">
+                              {proposalLoadingMessage || "AI is refining your proposal…"}
+                            </p>
+                            <p className="text-[11px] text-violet-700 mt-0.5">
+                              {getToneById(activeProposalToneId).label} style · please wait
+                            </p>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    <AnimatePresence initial={false}>
+                      {proposalSuggestion && !enhancingProposal && (
                         <motion.div
                           initial={{ opacity: 0, y: -4 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: -4 }}
                           className="rounded-xl border border-violet-200 bg-violet-50 p-3 space-y-2"
                         >
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="text-[10px] font-black text-violet-700 uppercase tracking-widest flex items-center gap-1.5">
-                              <Sparkles className="h-3 w-3" />
-                              AI suggestion
-                            </p>
-                            <button type="button" onClick={() => setProposalSuggestion("")} className="text-[11px] text-violet-700 hover:underline">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <p className="text-[10px] font-black text-violet-700 uppercase tracking-widest flex items-center gap-1.5">
+                                <Sparkles className="h-3 w-3" />
+                                Alternative proposal generated
+                              </p>
+                              <p className="text-[11px] text-violet-800 mt-1">
+                                Version {proposalVersion} of {MAX_PROPOSAL_VERSIONS} · {getToneById(activeProposalToneId).shortLabel} style
+                              </p>
+                            </div>
+                            <button type="button" onClick={() => setProposalSuggestion("")} className="text-[11px] text-violet-700 hover:underline shrink-0">
                               Dismiss
                             </button>
                           </div>
@@ -626,8 +628,9 @@ export default function BidModal({ job, onClose, onBidSubmitted, onSubmitSuccess
                             <Button type="button" size="sm" onClick={applyProposalSuggestion} className="h-8 rounded-lg text-xs">
                               Use this version
                             </Button>
-                            <Button type="button" size="sm" variant="outline" onClick={() => handleEnhanceProposal(proposalSuggestionMode || "professional")} disabled={enhancingProposal} className="h-8 rounded-lg text-xs">
-                              {enhancingProposal ? "Refining..." : "Regenerate"}
+                            <Button type="button" size="sm" variant="outline" onClick={() => handleEnhanceProposal({ regenerate: true })} disabled={enhancingProposal} className="h-8 rounded-lg text-xs gap-1.5">
+                              <Sparkles className="h-3 w-3" />
+                              Regenerate (next style)
                             </Button>
                           </div>
                         </motion.div>
@@ -753,12 +756,12 @@ export default function BidModal({ job, onClose, onBidSubmitted, onSubmitSuccess
                       onClick={() => console.debug("[BidModal] submit button clicked")}
                       disabled={submitting || !biddingOpen}
                       className="w-full h-12 rounded-xl font-semibold gap-2 bg-gradient-to-r from-violet-600 to-primary border-0 text-sm">
-                      {submitting ? <><Loader2 className="h-4 w-4 animate-spin" /> Placing Bid…</> : <><Gavel className="h-4 w-4" /> {biddingOpen ? "Submit Bid" : "Bidding Closed"}</>}
+                      {submitting ? <><Loader2 className="h-4 w-4 animate-spin" /> Sending quote…</> : <><Gavel className="h-4 w-4" /> {biddingOpen ? "Send Quick Quote" : "Bidding Closed"}</>}
                     </Button>
                     {!canSubmit && submitAttempted && (
                       <motion.p initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
                         className="text-xs text-rose-600 text-center flex items-center justify-center gap-1">
-                        <AlertCircle className="h-3 w-3" />{!biddingOpen ? "Bidding is closed for this project." : `Still missing: ${missingFields.join(" · ") || incrementValidation?.message || "valid bid details"}`}
+                        <AlertCircle className="h-3 w-3" />{!biddingOpen ? "Bidding is closed for this project." : `Still missing: ${missingFields.join(" · ") || "valid quote details"}`}
                       </motion.p>
                     )}
                     <Button type="button" variant="ghost" onClick={onClose} className="w-full rounded-xl text-muted-foreground text-sm h-9">Cancel</Button>
@@ -876,3 +879,4 @@ export default function BidModal({ job, onClose, onBidSubmitted, onSubmitSuccess
     </AnimatePresence>
   );
 }
+

@@ -94,8 +94,16 @@ export default function OwnerProjectActions({ job, onJobUpdated, bidCount }) {
 
       {/* Primary actions */}
       <div className="space-y-2">
+        <Button
+          variant="default"
+          className="w-full gap-2 justify-start bg-teal-700 hover:bg-teal-800"
+          onClick={() => navigate(`/my-projects/${job.id}`)}
+        >
+          <Users className="h-4 w-4" />
+          {bidCount > 0 ? `Compare ${bidCount} bid${bidCount !== 1 ? "s" : ""}` : "View bid comparison"}
+        </Button>
         <Button variant="outline" className="w-full gap-2 justify-start" onClick={() => navigate("/my-projects")}>
-          <Users className="h-4 w-4" /> View Bids
+          <Users className="h-4 w-4" /> All my projects
         </Button>
 
         <Button variant="outline" className="w-full gap-2 justify-start" onClick={() => setEditing(!editing)}>

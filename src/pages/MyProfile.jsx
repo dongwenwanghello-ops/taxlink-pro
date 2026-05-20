@@ -58,7 +58,10 @@ export default function MyProfile() {
     hidden:  { Icon: EyeOff, label: "Open Privately",   desc: "Hidden from search · AI-matchable",    color: "bg-violet-50 text-violet-700 border-violet-200" },
     private: { Icon: Lock,   label: "Private",          desc: "Invite only · Not publicly visible",   color: "bg-slate-100 text-slate-600 border-slate-200" },
   };
-  const vis = visibilityConfig[profile.visibility] || visibilityConfig.public;
+  const isPrivateProfile = profile.visibility === "private"
+    || profile.profile_visibility_setup_pending
+    || profile.profile_public === false;
+  const vis = visibilityConfig[profile.visibility] || (isPrivateProfile ? visibilityConfig.private : visibilityConfig.public);
   const avail = availabilityConfig[profile.availability] || availabilityConfig.available;
   const initials = (profile.full_name || "").split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
   const trustSummary = [
@@ -94,15 +97,30 @@ export default function MyProfile() {
 
       <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 space-y-5">
 
-        {/* Success banner */}
-        <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-          className="flex items-start gap-3 px-4 py-3 rounded-xl bg-emerald-50 border border-emerald-200">
-          <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm font-semibold text-emerald-800">Your profile is live</p>
-            <p className="text-xs text-emerald-700 mt-0.5">Clients can now find and contact you. You'll receive bid invitations matching your specialisations.</p>
-          </div>
-        </motion.div>
+        {isPrivateProfile ? (
+          <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+            className="flex items-start gap-3 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200">
+            <Sparkles className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-amber-900">Complete your public profile to receive more opportunities</p>
+              <p className="text-xs text-amber-800 mt-0.5">
+                Your profile is private for now. Add qualifications, bio, and switch visibility when you are ready to be discovered by clients.
+              </p>
+              <Link to="/create-profile" className="inline-block mt-2 text-xs font-bold text-amber-900 underline underline-offset-2">
+                Finish profile setup →
+              </Link>
+            </div>
+          </motion.div>
+        ) : (
+          <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+            className="flex items-start gap-3 px-4 py-3 rounded-xl bg-emerald-50 border border-emerald-200">
+            <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-emerald-800">Your profile is live</p>
+              <p className="text-xs text-emerald-700 mt-0.5">Clients can find and contact you. You&apos;ll receive bid invitations matching your specialisations.</p>
+            </div>
+          </motion.div>
+        )}
 
         {/* Visibility status */}
         <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.04 }}
@@ -139,7 +157,7 @@ export default function MyProfile() {
               {initials}
             </div>
             <div className="flex-1 min-w-0">
-              <h2 className="text-xl font-bold text-foreground">{profile.full_name}</h2>
+              <h2 className="text-xl font-bold text-foreground">{profile.display_name || profile.full_name}</h2>
               <p className="text-muted-foreground text-sm mt-0.5">{profile.headline || profile.title}</p>
               <Badge variant="outline" className="mt-2 text-xs">
                 {ROLE_LABELS[profile.user_role] || "Professional"}

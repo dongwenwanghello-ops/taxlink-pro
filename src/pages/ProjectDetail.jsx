@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import {
-  ArrowLeft, Briefcase, Clock, Users, Wifi, Star, ShieldCheck,
-  Gavel, TrendingUp, CheckCircle2, Zap, MapPin, Calendar, Loader2
+  ArrowLeft, Briefcase, Clock, Wifi, Gavel, Zap, MapPin, Calendar, Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,16 +11,18 @@ import { DEMO_JOBS } from "@/lib/demoData";
 import { base44 } from "@/api/base44Client";
 import { getBidsForProject } from "@/lib/bidStore";
 import { getPostedProjects } from "@/lib/projectStore";
-import { computeBidCompetitiveness } from "@/lib/winProbabilityEngine";
 import BidModal from "@/components/shared/BidModal.jsx";
 import CountdownBadge from "@/components/shared/CountdownBadge.jsx";
 import { useBiddingCountdown } from "@/hooks/useBiddingCountdown";
 import { resolveDeadline } from "@/lib/countdownUtils";
 import { cn } from "@/lib/utils";
-import MarketplaceIntelligence from "@/components/shared/MarketplaceIntelligence";
-import WinChanceBreakdown from "@/components/shared/WinChanceBreakdown.jsx";
 import OwnerProjectActions from "@/components/shared/OwnerProjectActions";
 import { scoreMarketplaceProject } from "@/lib/marketplaceIntelligence";
+import ProjectBiddingTopBar from "@/components/shared/ProjectBiddingTopBar";
+import ProjectSnapshot from "@/components/shared/ProjectSnapshot";
+import ClientTrustPanel from "@/components/shared/ClientTrustPanel";
+import GuidedPricingPanel from "@/components/shared/GuidedPricingPanel";
+import ProjectQuickSignals from "@/components/shared/ProjectQuickSignals";
 
 const categoryLabels = {
   tax_return: "Tax Return", bookkeeping: "Bookkeeping", payroll: "Payroll",
@@ -67,10 +68,6 @@ const urgencyLabels = {
 };
 
 const formatCurrency = (value) => `£${Math.round(value).toLocaleString()}`;
-
-function seeded(id = "", offset = 0) {
-  return id.split("").reduce((a, c) => a + c.charCodeAt(0), 0) + offset;
-}
 
 function LoadingSkeleton() {
   return (
@@ -123,11 +120,6 @@ export default function ProjectDetail() {
   const [job, setJob] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
 
-  // Calculate metrics for win chance (must be called before any early returns)
-  const closingHours = job ? 6 + (seeded(job.id, 3) % 58) : 24;
-  const clientRating = job ? (4.5 + ((seeded(job.id, 7) % 6) / 10)).toFixed(1) : 4.5;
-  const paymentRate = job ? 90 + (seeded(job.id, 13) % 10) : 90;
-
   const { isClosed: biddingClosed, isOpen: biddingOpen, hasDeadline } = useBiddingCountdown(job, {
     startDate: job?.created_date,
     biddingPeriod: job?.bidding_period,
@@ -152,24 +144,6 @@ export default function ProjectDetail() {
       descriptionLength: job.description?.length || 0,
     });
   }, [job]);
-
-  const winChance = useMemo(() => {
-    if (!job) return null;
-    return computeBidCompetitiveness({
-      amount: job.budget_amount || marketplaceScore?.recommendedBudgetRange?.min || 300,
-      budgetAmount: job.budget_amount,
-      proposal: job.description || "",
-      timeline: job.urgency === "asap" ? "24h" : job.urgency === "urgent" ? "3d" : "1w",
-      category: job.category,
-      complexity: job.complexity || "medium",
-      urgency: job.urgency || "negotiable",
-      bidCount,
-      clientTrustScore: paymentRate / 100,
-      rating: parseFloat(clientRating),
-      completedJobs: 8 + seeded(job.id, 17) % 12,
-      responseSpeed: 75,
-    });
-  }, [job, bidCount, paymentRate, clientRating, closingHours, marketplaceScore]);
 
   // Load current user for ownership check
   useEffect(() => {
@@ -276,9 +250,6 @@ export default function ProjectDetail() {
   const catColor   = categoryColors[job.category] || categoryColors.other;
   const catLabel   = categoryLabels[job.category] || job.category;
   const postedAgo  = job.created_date ? formatDistanceToNow(new Date(job.created_date), { addSuffix: true }) : null;
-  const critical   = closingHours < 8;
-  const bidMin = job.budget_amount ? Math.round(job.budget_amount * 0.85) : null;
-  const bidMax = job.budget_amount ? Math.round(job.budget_amount * (1 + bidCount * 0.07)) : null;
   const isOwner = currentUser && job.created_by && currentUser.email === job.created_by;
   const estimatedBudgetRange = marketplaceScore?.recommendedBudgetRange;
 
@@ -299,15 +270,35 @@ export default function ProjectDetail() {
           {/* ── Main Content ── */}
           <div className="lg:col-span-2 space-y-6">
 
+            {isOwner && bidCount > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="rounded-2xl border border-teal-200 bg-gradient-to-r from-teal-50 to-emerald-50/80 p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+              >
+                <div>
+                  <p className="text-sm font-bold text-teal-900 flex items-center gap-2">
+                    <Users className="h-4 w-4" />
+                    {bidCount} professional{bidCount !== 1 ? "s" : ""} waiting for your decision
+                  </p>
+                  <p className="text-xs text-teal-800/90 mt-1 max-w-lg">
+                    Compare trust, proposals, and fit — then contact, shortlist, or award. This page is your project brief; use bid comparison to decide.
+                  </p>
+                </div>
+                <Button asChild className="rounded-xl bg-teal-700 hover:bg-teal-800 shrink-0">
+                  <Link to={`/my-projects/${job.id}`}>Compare bids</Link>
+                </Button>
+              </motion.div>
+            )}
+
             {/* Title card */}
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-              className="bg-card border border-border/70 rounded-2xl p-6">
-              <div className="flex flex-wrap items-center gap-2 mb-4">
-                {biddingOpen && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />Open for bids
-                  </span>
-                )}
+              className="bg-card border border-border/70 rounded-2xl p-6 space-y-4">
+              {!isOwner && (
+                <ProjectBiddingTopBar job={job} deadline={deadline} biddingOpen={biddingOpen} />
+              )}
+
+              <div className="flex flex-wrap items-center gap-2">
                 {!biddingOpen && (
                   <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-600 text-xs font-semibold">
                     {job.status === "in_progress" || job.lifecycle_state === "awarded" ? "Awarded / In Progress" : "Bidding closed"}
@@ -343,13 +334,19 @@ export default function ProjectDetail() {
               {job.description && (
                 <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{job.description}</p>
               )}
+
+              {!isOwner && <ProjectSnapshot job={job} />}
+              {!isOwner && (
+                <ProjectQuickSignals job={job} bidCount={bidCount} />
+              )}
+              {!isOwner && <GuidedPricingPanel job={job} marketplaceScore={marketplaceScore} compact />}
             </motion.div>
 
-            {/* Required qualifications */}
+            {/* Preferred qualifications */}
             {job.required_qualifications?.length > 0 && (
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
                 className="bg-card border border-border/70 rounded-2xl p-5 space-y-3">
-                <h3 className="font-semibold text-foreground text-sm">Required Qualifications</h3>
+                <h3 className="font-semibold text-foreground text-sm">Preferred Qualifications</h3>
                 <div className="flex flex-wrap gap-2">
                   {job.required_qualifications.map(q => (
                     <span key={q} className="px-3 py-1 rounded-full bg-primary/8 text-primary border border-primary/20 text-xs font-bold">{q}</span>
@@ -358,73 +355,6 @@ export default function ProjectDetail() {
               </motion.div>
             )}
 
-            {/* Bid activity */}
-            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}
-              className="bg-card border border-border/70 rounded-2xl p-5 space-y-3">
-              <h3 className="font-semibold text-foreground text-sm">Bid Activity</h3>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                <div className="rounded-xl bg-violet-50 border border-violet-100 px-3 py-3 text-center">
-                  <Users className="h-4 w-4 text-violet-500 mx-auto mb-1" />
-                  <p className="text-xl font-extrabold text-violet-700">{bidCount}</p>
-                  <p className="text-xs text-muted-foreground">Bidders</p>
-                </div>
-                <div className={`rounded-xl border px-3 py-3 text-center ${critical ? "bg-rose-50 border-rose-100" : "bg-amber-50 border-amber-100"}`}>
-                  <Clock className={`h-4 w-4 mx-auto mb-1 ${critical ? "text-rose-500" : "text-amber-500"}`} />
-                  <p className={`text-xl font-extrabold ${critical ? "text-rose-700" : "text-amber-700"}`}>{closingHours}h</p>
-                  <p className="text-xs text-muted-foreground">Closes in</p>
-                </div>
-                {bidMin && bidMax && (
-                  <div className="rounded-xl bg-primary/5 border border-primary/15 px-3 py-3 text-center">
-                    <TrendingUp className="h-4 w-4 text-primary mx-auto mb-1" />
-                    <p className="text-sm font-extrabold text-primary">£{bidMin.toLocaleString()}–{bidMax.toLocaleString()}</p>
-                    <p className="text-xs text-muted-foreground">Bid range</p>
-                  </div>
-                )}
-              </div>
-            </motion.div>
-
-            {/* Win Chance Breakdown — bidders only */}
-            {!isOwner && <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.14 }}>
-              <WinChanceBreakdown
-                percent={winChance?.score}
-                displayRange={winChance?.displayRange}
-                label={winChance?.label}
-                summary={winChance?.summary}
-                insights={winChance?.insights}
-                priceScore={(winChance?.factors?.price || 50) / 100}
-                competitionScore={(winChance?.factors?.competition || 50) / 100}
-                trustScore={(winChance?.factors?.clientTrust || 80) / 100}
-                reputationScore={(winChance?.factors?.reputation || 60) / 100}
-                demandScore={(marketplaceScore?.interestScore || 50) / 100}
-                urgencyScore={(winChance?.factors?.response || 60) / 100}
-                category={job.category}
-                bidCount={bidCount}
-                budgetAmount={job.budget_amount}
-                userRating={parseFloat(clientRating)}
-                clientPaymentRate={paymentRate}
-                complexity={job.complexity || "medium"}
-              />
-            </motion.div>}
-
-            {/* AI Marketplace Intelligence — bidders only */}
-            {!isOwner && <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18 }}>
-              <MarketplaceIntelligence
-                category={job.category}
-                complexity={job.complexity || "medium"}
-                urgency={job.urgency || "negotiable"}
-                biddingPeriod={job.bidding_period}
-                biddingDeadline={job.bidding_deadline}
-                budgetAmount={job.budget_amount}
-                remote={job.remote}
-                missingRecords={job.missing_records}
-                multipleIncomeSources={job.multiple_income_sources}
-                internationalTaxIssues={job.international_tax_issues}
-                estimatedWorkload={job.estimated_workload}
-                deadlinePressure={job.deadline_pressure}
-                descriptionLength={job.description?.length || 0}
-                compact={false}
-              />
-            </motion.div>}
           </div>
 
           {/* ── Sidebar ── */}
@@ -465,7 +395,7 @@ export default function ProjectDetail() {
                     )}
                   >
                     <Gavel className="h-4 w-4" />
-                    {biddingClosed ? "Bidding Closed" : "Submit Your Quote"}
+                    {biddingClosed ? "Bidding Closed" : "Send Quick Quote"}
                   </Button>
                   <p className="text-xs text-muted-foreground text-center">No fees to bid · Remote work · Verified professionals only</p>
                 </div>
@@ -520,31 +450,11 @@ export default function ProjectDetail() {
               </div>
             </motion.div>
 
-            {/* Client trust */}
-            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
-              className="bg-card border border-border/70 rounded-2xl p-5 space-y-2">
-              <h3 className="font-semibold text-foreground text-sm flex items-center gap-1.5">
-                <ShieldCheck className="h-4 w-4 text-emerald-500" />Trusted Client
-              </h3>
-              <div className="space-y-1.5 text-xs text-muted-foreground">
-                <div className="flex items-center justify-between">
-                  <span>Client rating</span>
-                  <span className="flex items-center gap-1 font-semibold text-foreground">
-                    <Star className="h-3 w-3 fill-amber-400 text-amber-400" />{clientRating}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Payment reliability</span>
-                  <span className="font-semibold text-emerald-600">{paymentRate}%</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Verification</span>
-                  <span className="flex items-center gap-1 font-semibold text-primary">
-                    <CheckCircle2 className="h-3 w-3" />Verified
-                  </span>
-                </div>
-              </div>
-            </motion.div>
+            {!isOwner && (
+              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
+                <ClientTrustPanel job={job} />
+              </motion.div>
+            )}
           </div>
         </div>
       </div>

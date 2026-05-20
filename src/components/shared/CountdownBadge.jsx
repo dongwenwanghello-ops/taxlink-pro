@@ -2,6 +2,7 @@ import React from "react";
 import { Clock, Timer, AlertTriangle } from "lucide-react";
 import { useBiddingCountdown } from "@/hooks/useBiddingCountdown";
 import { formatDeadline } from "@/lib/countdownUtils";
+import { getQuoteCountdownPsychology } from "@/lib/projectBiddingUX";
 import { cn } from "@/lib/utils";
 
 const URGENCY_STYLES = {
@@ -51,7 +52,14 @@ export default function CountdownBadge({
 
   const styles = URGENCY_STYLES[urgency] || URGENCY_STYLES.comfortable;
   const Icon = styles.icon;
-  const displayLabel = isClosed ? "Bidding Closed" : compact ? shortLabel || label : label;
+  const psychology = !isClosed ? getQuoteCountdownPsychology(deadline) : null;
+  const displayLabel = isClosed
+    ? "Bidding Closed"
+    : psychology
+      ? `${psychology.emoji} ${psychology.message}`
+      : compact
+        ? shortLabel || label
+        : label;
 
   const elapsedPct =
     progress != null ? Math.round(progress * 100) : urgency === "critical" ? 92 : urgency === "urgent" ? 75 : 40;

@@ -90,40 +90,17 @@ export default function DemoBidDetailModal({ bid, onClose }) {
               </div>
             )}
 
-            {/* Win Probability */}
-            <div className={`rounded-xl border p-4 space-y-3 ${bid.winColor}`}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Zap className={`h-4 w-4 ${bid.winIconColor}`} />
-                  <span className="font-semibold text-xs uppercase tracking-widest">Bid Competitiveness</span>
-                </div>
-                <p className={`text-2xl font-extrabold ${bid.winIconColor}`}>
-                  {typeof bid.win_probability === "number" ? `${Math.round(bid.win_probability)}%` : bid.win_probability}
-                </p>
-              </div>
-              <p className="text-xs text-muted-foreground">{bid.win_analysis}</p>
-            </div>
-
-            {/* Market Position */}
+            {/* Quote & context */}
             <div className="rounded-xl border border-violet-200 bg-violet-50 p-4 space-y-3">
-              <p className="text-xs font-bold text-violet-700 uppercase tracking-widest">Market Position</p>
+              <p className="text-xs font-bold text-violet-700 uppercase tracking-widest">Guided pricing</p>
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Your Quote</span>
                   <span className="font-bold text-foreground">£{bid.amount}</span>
                 </div>
-                <div className="h-2 bg-secondary rounded-full overflow-hidden relative">
-                  <div className="absolute h-full bg-primary/20 w-full" />
-                  <motion.div className="h-full bg-primary" initial={{ width: 0 }} animate={{ width: `${bid.marketPercentile}%` }} transition={{ duration: 0.6 }} />
-                </div>
-                <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                  <span>Market floor: £{bid.market_floor}</span>
-                  <span>Market avg: £{bid.market_avg}</span>
-                  <span>Market high: £{bid.market_high}</span>
-                </div>
               </div>
-              <p className={`text-xs font-semibold ${bid.marketPositionColor}`}>
-                {bid.marketPositionLabel}
+              <p className="text-xs text-muted-foreground">
+                Other professionals&apos; quotes are confidential. Use typical market ranges and a strong proposal.
               </p>
             </div>
 
@@ -131,23 +108,14 @@ export default function DemoBidDetailModal({ bid, onClose }) {
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-lg border border-border/70 bg-secondary/30 p-3 text-center">
                 <Users className="h-4 w-4 text-muted-foreground mx-auto mb-1" />
-                <p className="text-lg font-extrabold text-foreground">{bid.competing_bids}</p>
-                <p className="text-[10px] text-muted-foreground">competing bids</p>
+                <p className="text-lg font-extrabold text-foreground">{bid.competing_bids <= 2 ? "Low" : "Moderate"}</p>
+                <p className="text-[10px] text-muted-foreground">interest level</p>
               </div>
               <div className="rounded-lg border border-border/70 bg-secondary/30 p-3 text-center">
                 <Star className="h-4 w-4 text-amber-400 mx-auto mb-1 fill-amber-400" />
                 <p className="text-lg font-extrabold text-foreground">{bid.client_rating}</p>
                 <p className="text-[10px] text-muted-foreground">client trust</p>
               </div>
-            </div>
-
-            {/* AI Insight */}
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 space-y-2">
-              <p className="text-xs font-bold text-emerald-700 uppercase tracking-widest flex items-center gap-1.5">
-                <Zap className="h-3.5 w-3.5" />
-                AI Insight
-              </p>
-              <p className="text-xs text-emerald-700 leading-relaxed">{bid.ai_insight}</p>
             </div>
 
             {/* Project Description (Sample) */}
@@ -175,7 +143,7 @@ export default function DemoBidDetailModal({ bid, onClose }) {
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 flex items-start gap-2">
               <Info className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
               <p className="text-xs text-amber-700">
-                <strong>This is a demo example.</strong> Submit your first real bid on open projects to see actual win probabilities and AI insights.
+                <strong>This is a demo example.</strong> Submit a real bid on open projects to track status and open a workspace when selected.
               </p>
             </div>
           </div>

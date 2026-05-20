@@ -15,7 +15,13 @@ export default function Navbar() {
   useEffect(() => {
     const refresh = () => setBidCount(getAllBids().length);
     window.addEventListener("bidSubmitted", refresh);
-    return () => window.removeEventListener("bidSubmitted", refresh);
+    window.addEventListener("bidUpdated", refresh);
+    window.addEventListener("projectAwarded", refresh);
+    return () => {
+      window.removeEventListener("bidSubmitted", refresh);
+      window.removeEventListener("bidUpdated", refresh);
+      window.removeEventListener("projectAwarded", refresh);
+    };
   }, []);
 
   const isActive = (path) => location.pathname === path;
@@ -58,6 +64,7 @@ export default function Navbar() {
             )}
           </Link>
           <Link to="/my-projects" className={linkClass("/my-projects")}>My Projects</Link>
+          <Link to="/workspaces" className={linkClass("/workspaces")}>Workspaces</Link>
         </nav>
 
         {/* Desktop CTAs */}
@@ -99,6 +106,7 @@ export default function Navbar() {
                 { label: "Reviews", to: "/reviews" },
                 { label: "My Bids", to: "/my-bids" },
                 { label: "My Projects", to: "/my-projects" },
+                { label: "Workspaces", to: "/workspaces" },
               ].map((link) => (
                 <Link key={link.to} to={link.to} onClick={() => setOpen(false)}
                   className={`px-3 py-2.5 text-sm font-medium rounded-lg transition-colors ${

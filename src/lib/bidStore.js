@@ -33,6 +33,19 @@ export function updateBidStatus(bidId, status) {
   window.dispatchEvent(new CustomEvent("bidUpdated", { detail: { bidId, status } }));
 }
 
+export function toggleBidShortlist(bidId) {
+  const bids = getAllBids().map((b) => {
+    if (b.id !== bidId) return b;
+    if (b.status === "accepted" || b.status === "rejected") return b;
+    const next = b.status === "shortlisted" ? "pending" : "shortlisted";
+    return { ...b, status: next, shortlisted: next === "shortlisted" };
+  });
+  localStorage.setItem(KEY, JSON.stringify(bids));
+  const updated = bids.find((b) => b.id === bidId);
+  window.dispatchEvent(new CustomEvent("bidUpdated", { detail: { bidId, status: updated?.status } }));
+  return updated;
+}
+
 export function updateBidsForProject(projectId, updater) {
   const updatedBids = getAllBids().map((bid) => {
     if (bid.project_id !== projectId) return bid;
@@ -49,8 +62,9 @@ export function awardProjectBid(projectId, winningBidId) {
     ...bid,
     status: bid.id === winningBidId ? "accepted" : "rejected",
     awarded: bid.id === winningBidId,
+    identity_revealed: bid.id === winningBidId,
     awarded_at: bid.id === winningBidId ? awardedAt : bid.awarded_at,
-    rejection_reason: bid.id === winningBidId ? undefined : "Project awarded to another professional",
+    rejection_reason: bid.id === winningBidId ? undefined : "Another professional was selected",
   }));
 }
 

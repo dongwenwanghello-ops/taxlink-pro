@@ -639,7 +639,7 @@ Write a fresh, publication-ready brief now.`;
           <div>
             <h1 className="text-2xl font-bold text-foreground">Project Live in the Marketplace</h1>
             <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
-              <strong className="text-foreground">"{publishedTitle}"</strong> is now open for competitive bids from verified UK professionals.
+              <strong className="text-foreground">"{publishedTitle}"</strong> is now open for professional quotes from verified UK specialists.
             </p>
           </div>
 

@@ -275,7 +275,7 @@ export default function JobCard({ job }) {
                 <div className="flex items-center gap-3 text-xs text-muted-foreground">
                   <TrendingUp className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
                   <span>
-                    <strong className="text-foreground">{bidCount >= 6 ? "High" : bidCount >= 3 ? "Active" : "Early"} competition</strong>
+                    <strong className="text-foreground">{bidCount === 0 ? "Be the first to quote" : bidCount <= 2 ? "Few professionals interested" : "Multiple professionals interested"}</strong>
                     {" · "}{durationLabels[job.duration] || "One-off"}
                     {postedAgo && <>{" · "}Posted {postedAgo}</>}
                   </span>
@@ -310,7 +310,7 @@ export default function JobCard({ job }) {
             )}
           >
             <Gavel className="h-3.5 w-3.5" />
-            {biddingClosed ? "Bidding Closed" : "Submit Your Quote"}
+            {biddingClosed ? "Bidding Closed" : "Send Quick Quote"}
             {!biddingClosed && <ArrowRight className="h-3.5 w-3.5" />}
           </Button>
         </div>
