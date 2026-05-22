@@ -1,28 +1,30 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
   LayoutGrid, ArrowRight, Loader2, MessageCircle, FileUp, Clock,
 } from "lucide-react";
 import { base44 } from "@/api/base44Client";
-import {
-  getWorkspacesForUserWithSync,
-  summarizeWorkspaceCard,
-  getAcceptedBidsForUser,
-  syncWorkspacesFromAcceptedBids,
-} from "@/lib/awardWorkflow";
+import { summarizeWorkspaceCard, getAcceptedBidsForUser } from "@/lib/awardWorkflow";
 import { getWorkspaceByProjectId } from "@/lib/workspaceStore";
-import { getSessionProfessionalEmail } from "@/lib/workspaceAccess";
+import {
+  getMarketplaceSession,
+  setMarketplaceClientEmail,
+  WORKFLOW_EVENTS,
+} from "@/lib/marketplaceState";
+import { useMarketplaceWorkflow } from "@/lib/MarketplaceWorkflowContext";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDistanceToNow } from "date-fns";
 
 export default function Workspaces() {
+  const { snapshot, refresh, accessibleWorkspaces: ctxWorkspaces } = useMarketplaceWorkflow();
   const [workspaces, setWorkspaces] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [userRole, setUserRole] = useState(null);
+  const [userRole, setUserRole] = useState("professional");
   const [acceptedBids, setAcceptedBids] = useState([]);
 
-  const load = async () => {
+  const load = useCallback(async () => {
+    setLoading(true);
     try {
       let user = null;
       try {
@@ -30,14 +32,22 @@ export default function Workspaces() {
       } catch {
         user = null;
       }
-      const role = localStorage.getItem("user_role") || "professional";
+      if (user?.email) setMarketplaceClientEmail(user.email);
+
+      const result = refresh();
+      const session = getMarketplaceSession();
+      const role = session.role;
       setUserRole(role);
-      const email = (user?.email || getSessionProfessionalEmail() || "").toLowerCase();
-      syncWorkspacesFromAcceptedBids();
-      const list = getWorkspacesForUserWithSync({ email, role });
+
+      const list =
+        result?.snapshot?.accessibleWorkspaces
+        ?? ctxWorkspaces
+        ?? snapshot?.accessibleWorkspaces
+        ?? [];
       setWorkspaces(list);
+
       if (role === "professional") {
-        setAcceptedBids(email ? getAcceptedBidsForUser(email) : []);
+        setAcceptedBids(session.email ? getAcceptedBidsForUser(session.email) : []);
       } else {
         setAcceptedBids([]);
       }
@@ -47,22 +57,27 @@ export default function Workspaces() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [refresh, ctxWorkspaces, snapshot?.accessibleWorkspaces]);
 
   useEffect(() => {
     load();
-    const refresh = () => load();
-    window.addEventListener("workspaceCreated", refresh);
-    window.addEventListener("workspaceUpdated", refresh);
-    window.addEventListener("projectAwarded", refresh);
-    window.addEventListener("bidUpdated", refresh);
+  }, [load, snapshot?.counts?.workspaces]);
+
+  useEffect(() => {
+    const onRefresh = () => load();
+    window.addEventListener(WORKFLOW_EVENTS.reconciled, onRefresh);
+    window.addEventListener("workspaceCreated", onRefresh);
+    window.addEventListener("workspaceUpdated", onRefresh);
+    window.addEventListener("projectAwarded", onRefresh);
+    window.addEventListener("bidUpdated", onRefresh);
     return () => {
-      window.removeEventListener("workspaceCreated", refresh);
-      window.removeEventListener("workspaceUpdated", refresh);
-      window.removeEventListener("projectAwarded", refresh);
-      window.removeEventListener("bidUpdated", refresh);
+      window.removeEventListener(WORKFLOW_EVENTS.reconciled, onRefresh);
+      window.removeEventListener("workspaceCreated", onRefresh);
+      window.removeEventListener("workspaceUpdated", onRefresh);
+      window.removeEventListener("projectAwarded", onRefresh);
+      window.removeEventListener("bidUpdated", onRefresh);
     };
-  }, []);
+  }, [load]);
 
   const primaryAccepted = acceptedBids.find((b) => getWorkspaceByProjectId(b.project_id));
 
@@ -98,7 +113,7 @@ export default function Workspaces() {
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-4">
         {hasSelectedWithoutWorkspace && (
           <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4 text-sm text-amber-900">
-            You have a selected proposal but the workspace had not synced yet. Refreshing…
+            You have a selected proposal but the workspace had not synced yet.
             <Button type="button" size="sm" variant="outline" className="mt-2 rounded-lg" onClick={() => load()}>
               Sync workspace
             </Button>

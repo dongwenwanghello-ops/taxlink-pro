@@ -3,7 +3,7 @@
  */
 import { base44 } from "@/api/base44Client";
 import { getAllBids } from "@/lib/bidStore";
-import { syncWorkspacesFromAwardedProjects, syncWorkspacesFromAcceptedBids } from "@/lib/awardWorkflow";
+import { reconcileMarketplaceState } from "@/lib/marketplaceState";
 import {
   getBidStatusUI,
   normalizeBidStatus,
@@ -118,8 +118,7 @@ export function filterBidsForProfessional(bids, userEmail) {
 
 export async function loadMyBidsDisplay({ userEmail = null } = {}) {
   try {
-    syncWorkspacesFromAwardedProjects();
-    syncWorkspacesFromAcceptedBids();
+    reconcileMarketplaceState();
   } catch (err) {
     console.warn("[MyBids] workspace sync skipped", err);
   }

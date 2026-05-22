@@ -6,7 +6,7 @@ import { DEMO_JOBS } from "@/lib/demoData";
 import { getPostedProjects, updateProject } from "@/lib/projectStore";
 import { getBidsForProject } from "@/lib/bidStore";
 import { enrichBidIdentity } from "@/lib/professionalIdentity";
-import { syncWorkspacesFromAwardedProjects, ensureWorkspaceForSelectedBid } from "@/lib/awardWorkflow";
+import { getProjectWorkflowBundle } from "@/lib/marketplaceState";
 import {
   resolveWorkspaceUserRole,
   getSessionProfessionalEmail,
@@ -98,15 +98,16 @@ export default function ProjectWorkspace() {
         };
       }
 
-      syncWorkspacesFromAwardedProjects(job?.created_by || me?.email);
-
-      if (accepted) {
-        ensureWorkspaceForSelectedBid(enrichBidIdentity(accepted), {
-          clientEmail: job?.created_by || me?.email,
-        });
+      const bundle = getProjectWorkflowBundle(projectId);
+      if (!accepted && bundle.winningBid) {
+        accepted = bundle.winningBid;
+      }
+      if (!job && bundle.project) {
+        job = bundle.project;
+        setProject(job);
       }
 
-      let ws = getWorkspaceByProjectId(projectId);
+      let ws = bundle.workspace || getWorkspaceByProjectId(projectId);
       if (ws) {
         const enrichedAccepted = accepted ? enrichBidIdentity(accepted) : null;
         const role = resolveWorkspaceUserRole({

@@ -9,22 +9,14 @@ import {
 import { motion } from "framer-motion";
 import { base44 } from "@/api/base44Client";
 import { formatBidForDashboard, loadMyBidsDisplay } from "@/lib/myBidsLoader";
-import { normalizeBidStatus, ensureWorkspaceForSelectedBid } from "@/lib/awardWorkflow";
+import { normalizeBidStatus } from "@/lib/bidLifecycle";
+import { getProjectWorkflowBundle } from "@/lib/marketplaceState";
 import DemoBidDetailModal from "@/components/demo/DemoBidDetailModal";
 import CountdownBadge from "@/components/shared/CountdownBadge.jsx";
 import BidLifecycleTimeline from "@/components/shared/BidLifecycleTimeline";
 
 function openWorkspaceForBid(bid) {
-  ensureWorkspaceForSelectedBid({
-    id: bid.id,
-    project_id: bid.project_id,
-    project_title: bid.project_title,
-    amount: bid.amount,
-    status: bid.storageStatus || bid.status || "accepted",
-    awarded: true,
-    bidder_email: bid.bidder_email,
-    project_category: bid.project_category,
-  });
+  if (bid?.project_id) getProjectWorkflowBundle(bid.project_id);
 }
 
 function DemoBidCard({ bid, onClick, isNewlySubmitted }) {

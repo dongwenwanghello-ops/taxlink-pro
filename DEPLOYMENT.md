@@ -25,10 +25,25 @@ TaxPro UK is a **single Vite build** deployed to Vercel (`src/vercel.json`). Dev
 2. Re-run one award flow on live to populate workspace + permissions on that origin.
 3. Confirm navbar routes: `/workspaces`, `/workspace/:projectId`, `/professionals/bid/:bidId`, `/my-projects/:projectId`.
 
+## Marketplace state integrity (before deploying)
+
+Do **not** push workflow migrations until local reconcile passes.
+
+1. Open devtools on the target origin and run: `reconcileMarketplaceState()` is invoked on app load via `workflowBootstrap.js`.
+2. Schema migrations auto-backup to `taxprouk_workflow_backup` (last 5 snapshots per origin).
+3. Orphan audit logs appear in the console as `[marketplace-reconcile]` when inconsistencies exist.
+4. All workspace sync runs only inside `reconcileMarketplaceState()` (`workflowSync.js`); pages use `getProjectWorkflowBundle()` or `useMarketplaceWorkflow()`.
+
+| Key | Purpose |
+|-----|---------|
+| `taxprouk_workflow_schema_version` | Reconcile schema (currently `2`) |
+| `taxprouk_workflow_backup` | Pre-migration localStorage backups |
+
 ## Deploy checklist
 
 ```bash
 npm run build
+# Verify award → /workspaces → /workspace/:id locally first
 git push origin main
 ```
 
