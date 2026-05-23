@@ -22,7 +22,7 @@ VITE_BASE44_APP_ID=your_app_id
 VITE_BASE44_APP_BASE_URL=your_backend_url
 
 e.g.
-VITE_BASE44_APP_ID=cbef744a8545c389ef439ea6
+VITE_BASE44_APP_ID=69b51a428de3f7bf0c16b295
 VITE_BASE44_APP_BASE_URL=https://my-to-do-list-81bfaad7.base44.app
 ```
 

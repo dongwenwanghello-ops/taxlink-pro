@@ -28,6 +28,7 @@ import ProjectOwnerBids from "./pages/ProjectOwnerBids"
 import MyProfile from "./pages/MyProfile"
 import Workspaces from "./pages/Workspaces"
 import ProjectWorkspace from "./pages/ProjectWorkspace"
+import MyBidsDemo from "./components/emptyStates/MyBidsDemo"
 
 const AuthenticatedApp = () => {
   const {
@@ -67,13 +68,14 @@ const AuthenticatedApp = () => {
         <Route path="/post-job" element={<PostJob />} />
         <Route path="/reviews" element={<Reviews />} />
         <Route path="/profile/:id" element={<ProfileDetail />} />
-        <Route path="/bidder/:id" element={<BidderPublicProfile />} />
+        <Route path="/professionals/bid/:bidId" element={<BidderPublicProfile />} />
         <Route path="/project/:id" element={<ProjectDetail />} />
         <Route path="/my-projects" element={<MyProjects />} />
         <Route path="/project-owner-bids/:id" element={<ProjectOwnerBids />} />
         <Route path="/my-profile" element={<MyProfile />} />
+        <Route path="/my-bids" element={<MyBidsDemo />} />
         <Route path="/workspaces" element={<Workspaces />} />
-        <Route path="/project-workspace/:id" element={<ProjectWorkspace />} />
+        <Route path="/workspace/:projectId" element={<ProjectWorkspace />} />
       </Route>
 
       <Route path="*" element={<PageNotFound />} />

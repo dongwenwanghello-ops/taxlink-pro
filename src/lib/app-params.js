@@ -54,7 +54,13 @@ const getAppParams = () => {
 		storage.removeItem('token');
 	}
 	const appIdFromHostname = getAppIdFromHostname();
-	const appId = getAppParamValue("app_id", { defaultValue: appIdFromHostname || HARDCODED_APP_ID });
+	const envAppId = appIdFromHostname || HARDCODED_APP_ID;
+	let appId = getAppParamValue("app_id", { defaultValue: envAppId });
+	// Recover from sessions where env was missing and "null" was cached in localStorage
+	if ((!appId || appId === "null" || appId === "undefined") && envAppId) {
+		storage.setItem("base44_app_id", envAppId);
+		appId = envAppId;
+	}
 	if (!isNode) {
 		console.log('[base44] hostname:', window.location.hostname, '| appId resolved:', appId);
 	}
