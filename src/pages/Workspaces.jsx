@@ -12,6 +12,8 @@ import {
   resolveWorkspaceListPriority,
   hasWorkspaceForAcceptedBid,
   loadAcceptedBidsForSession,
+  hasLocalWorkspaceOrSessionData,
+  shouldShowCloudSessionExpired,
 } from "@/lib/workspacePageUtils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -54,11 +56,11 @@ export default function Workspaces() {
     let cancelled = false;
 
     (async () => {
-      const { user, authRequired: needsAuth } = await resolveWorkspaceUser();
+      let { user } = await resolveWorkspaceUser();
       if (cancelled) return;
 
       const session = getMarketplaceSession();
-      let expired = false;
+      const hasLocalData = hasLocalWorkspaceOrSessionData(session);
 
       if (user?.email) {
         setMarketplaceClientEmail(user.email);
@@ -70,12 +72,30 @@ export default function Workspaces() {
         if (!cancelled) {
           applyWorkspaceList(report?.snapshot ?? null, refreshedSession, false);
         }
-      } else {
-        expired = needsAuth;
-        setAuthRequired(needsAuth);
-        auth.logAuthDebug({ authenticated: false, authRequired: needsAuth });
+      } else if (hasLocalData) {
+        try {
+          const restored = await auth.login();
+          if (restored?.email) {
+            user = restored;
+            setMarketplaceClientEmail(restored.email);
+          }
+        } catch {
+          /* keep marketplace session */
+        }
+        setAuthRequired(false);
+        setLocalOnlyMode(false);
+        auth.logAuthDebug({ authenticated: Boolean(user?.email), localData: true });
+        const refreshedSession = getMarketplaceSession();
+        const report = refresh();
         if (!cancelled) {
-          applyWorkspaceList(null, session, needsAuth);
+          applyWorkspaceList(report?.snapshot ?? null, refreshedSession, false);
+        }
+      } else {
+        const showExpired = shouldShowCloudSessionExpired({ user, session });
+        setAuthRequired(showExpired);
+        auth.logAuthDebug({ authenticated: false, authRequired: showExpired });
+        if (!cancelled) {
+          applyWorkspaceList(null, session, showExpired);
         }
       }
 
@@ -167,9 +187,14 @@ export default function Workspaces() {
   const showEmpty = workspaces.length === 0;
   const hasWorkspaceForBid = hasWorkspaceForAcceptedBid(acceptedBids);
   const hasSelectedWithoutWorkspace = acceptedBids.length > 0 && showEmpty;
-  const showExpiredWithLocal = authRequired && workspaces.length > 0;
-  const showCloudBanner = authRequired && !localOnlyMode;
-  const showLocalOnlyBanner = authRequired && localOnlyMode;
+  const session = getMarketplaceSession();
+  const hasLocalData = hasLocalWorkspaceOrSessionData(session);
+  const showCloudBanner =
+    authRequired
+    && !localOnlyMode
+    && !hasLocalData
+    && shouldShowCloudSessionExpired({ session });
+  const showLocalOnlyBanner = authRequired && localOnlyMode && !hasLocalData;
 
   return (
     <div className="min-h-screen bg-background">
@@ -253,7 +278,7 @@ export default function Workspaces() {
 
         {showEmpty ? (
           <div className="rounded-2xl border border-dashed border-border bg-card p-10 text-center space-y-4">
-            {authRequired && !localOnlyMode && !showExpiredWithLocal && (
+            {showCloudBanner && (
               <>
                 <p className="text-sm font-semibold text-foreground">No workspaces yet</p>
                 <p className="text-sm text-muted-foreground">
