@@ -65,7 +65,7 @@ export default function ProjectWorkspace() {
     const load = async () => {
       setLoading(true);
       try {
-        const { user: me } = await resolveWorkspaceUser(() => base44.auth.me());
+        const { user: me } = await resolveWorkspaceUser();
         setUser(me);
         if (me?.email) {
           refresh();

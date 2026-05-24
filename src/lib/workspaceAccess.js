@@ -126,6 +126,83 @@ export function collectCandidateEmails(user, project, winningBid) {
   return [...emails].filter(Boolean);
 }
 
+const CLIENT_SESSION_EMAIL_KEY = "taxprouk_client_email";
+
+/** True when workspace is missing client/professional owner fields or member rows. */
+export function isWorkspaceOwnershipIncomplete(workspace) {
+  if (!workspace) return false;
+  const hasClient = Boolean(workspace.client_email?.trim());
+  const hasPro = Boolean(
+    workspace.professional_email?.trim()
+    || workspace.selected_professional_email?.trim(),
+  );
+  const members = workspace.members || [];
+  const hasClientMember = members.some((m) => m.role === "client" && m.email);
+  const hasProMember = members.some((m) => m.role === "professional" && m.email);
+  return !hasClient || !hasPro || !hasClientMember || !hasProMember;
+}
+
+function readDevOnboardingClientEmail() {
+  try {
+    const signup = JSON.parse(localStorage.getItem("early_access_signup") || "null");
+    if (signup?.email) return String(signup.email).toLowerCase().trim();
+  } catch {
+    /* ignore */
+  }
+  return (localStorage.getItem(CLIENT_SESSION_EMAIL_KEY) || "").toLowerCase().trim();
+}
+
+/**
+ * Development-only: allow local demo users when ownership metadata is missing
+ * or when TaxLink local auth email does not match stored workspace client.
+ * No effect in production builds.
+ */
+export function resolveDevLocalWorkspaceRoleFallback({
+  workspace,
+  project = null,
+  user = null,
+  winningBid = null,
+} = {}) {
+  if (!import.meta.env.DEV || !workspace) return null;
+
+  const storedRole = localStorage.getItem("user_role");
+  const role = user?.role || storedRole;
+  if (!role) return null;
+
+  if (isWorkspaceOwnershipIncomplete(workspace)) {
+    if (role === "client") return "client";
+    if (role === "professional") return "professional";
+  }
+
+  const wsClient = workspace.client_email?.toLowerCase().trim();
+  const projectOwner = project?.created_by?.toLowerCase().trim();
+  const onboardingClient = readDevOnboardingClientEmail();
+
+  if (role === "client") {
+    const ownerEmail = wsClient || projectOwner;
+    if (ownerEmail) {
+      if (onboardingClient && onboardingClient === ownerEmail) return "client";
+      if (projectOwner && projectOwner === ownerEmail) return "client";
+      if (wsClient && projectOwner && wsClient === projectOwner) return "client";
+    }
+  }
+
+  if (role === "professional" && winningBid) {
+    const winPro = resolveProEmail(winningBid);
+    const wsPro = (
+      workspace.professional_email
+      || workspace.selected_professional_email
+      || ""
+    ).toLowerCase().trim();
+    const sessionPro = getSessionProfessionalEmail();
+    if (winPro && (wsPro === winPro || sessionPro === winPro || !wsPro)) {
+      return "professional";
+    }
+  }
+
+  return null;
+}
+
 /**
  * Resolve client | professional role for workspace access.
  */
@@ -189,7 +266,12 @@ export function resolveWorkspaceUserRole({
     return "client";
   }
 
-  return null;
+  return resolveDevLocalWorkspaceRoleFallback({
+    workspace,
+    project,
+    user,
+    winningBid: winning,
+  });
 }
 
 export function workspaceIncludesEmail(workspace, email) {
