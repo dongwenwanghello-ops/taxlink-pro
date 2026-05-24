@@ -6,6 +6,8 @@ import App from './App.jsx'
 import './index.css'
 import { clearLegacyVendorStorage } from '@/services/auth'
 
+import '@/lib/localStorageBackup'
+
 clearLegacyVendorStorage()
 
 ReactDOM.createRoot(document.getElementById('root')).render(

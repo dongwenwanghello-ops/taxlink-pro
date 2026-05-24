@@ -30,6 +30,7 @@ import MyProfile from "./pages/MyProfile"
 import Workspaces from "./pages/Workspaces"
 import ProjectWorkspace from "./pages/ProjectWorkspace"
 import MyBidsDemo from "./components/emptyStates/MyBidsDemo"
+import DataSyncSettings from "./pages/DataSyncSettings"
 
 function AdvisorRedirect() {
   const { advisorId } = useParams();
@@ -84,6 +85,7 @@ const AuthenticatedApp = () => {
         <Route path="/my-bids" element={<MyBidsDemo />} />
         <Route path="/workspaces" element={<Workspaces />} />
         <Route path="/workspace/:projectId" element={<ProjectWorkspace />} />
+        <Route path="/dev/data-sync" element={<DataSyncSettings />} />
       </Route>
 
       <Route path="*" element={<PageNotFound />} />
