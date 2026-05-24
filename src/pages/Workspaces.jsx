@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import {
   LayoutGrid, ArrowRight, Loader2, MessageCircle, FileUp, Clock, LogIn,
 } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { auth } from "@/config/providers";
 import { summarizeWorkspaceCard } from "@/lib/awardWorkflow";
 import { getMarketplaceSession, setMarketplaceClientEmail, WORKFLOW_EVENTS } from "@/lib/marketplaceState";
 import { useMarketplaceWorkflow } from "@/lib/MarketplaceWorkflowContext";
@@ -25,7 +25,9 @@ export default function Workspaces() {
   const [acceptedBids, setAcceptedBids] = useState([]);
   const [authRequired, setAuthRequired] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
+  const [localOnlyMode, setLocalOnlyMode] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isRetryingAuth, setIsRetryingAuth] = useState(false);
   const syncingRef = useRef(false);
 
   const applyWorkspaceList = useCallback((nextSnapshot, session, expired) => {
@@ -52,7 +54,7 @@ export default function Workspaces() {
     let cancelled = false;
 
     (async () => {
-      const { user, authRequired: needsAuth } = await resolveWorkspaceUser(() => base44.auth.me());
+      const { user, authRequired: needsAuth } = await resolveWorkspaceUser();
       if (cancelled) return;
 
       const session = getMarketplaceSession();
@@ -61,6 +63,8 @@ export default function Workspaces() {
       if (user?.email) {
         setMarketplaceClientEmail(user.email);
         setAuthRequired(false);
+        setLocalOnlyMode(false);
+        auth.logAuthDebug({ authenticated: true, email: user.email });
         const refreshedSession = getMarketplaceSession();
         const report = refresh();
         if (!cancelled) {
@@ -69,6 +73,7 @@ export default function Workspaces() {
       } else {
         expired = needsAuth;
         setAuthRequired(needsAuth);
+        auth.logAuthDebug({ authenticated: false, authRequired: needsAuth });
         if (!cancelled) {
           applyWorkspaceList(null, session, needsAuth);
         }
@@ -122,8 +127,33 @@ export default function Workspaces() {
     }
   }, [refresh, applyWorkspaceList, authRequired]);
 
-  const handleSignIn = () => {
-    base44.auth.redirectToLogin(window.location.href);
+  const applyAuthenticated = (user) => {
+    setMarketplaceClientEmail(user.email);
+    setAuthRequired(false);
+    setLocalOnlyMode(false);
+    const session = getMarketplaceSession();
+    const report = refresh();
+    applyWorkspaceList(report?.snapshot ?? null, session, false);
+  };
+
+  const handleRestoreSession = async () => {
+    setIsRetryingAuth(true);
+    try {
+      const user = await auth.login();
+      if (user?.email) {
+        auth.logAuthDebug({ authenticated: true, source: "restore" });
+        applyAuthenticated(user);
+      }
+    } finally {
+      setIsRetryingAuth(false);
+    }
+  };
+
+  const handleContinueLocally = () => {
+    setLocalOnlyMode(true);
+    const session = getMarketplaceSession();
+    applyWorkspaceList(null, session, true);
+    auth.logAuthDebug({ authenticated: false, localOnlyMode: true });
   };
 
   if (loading) {
@@ -138,6 +168,8 @@ export default function Workspaces() {
   const hasWorkspaceForBid = hasWorkspaceForAcceptedBid(acceptedBids);
   const hasSelectedWithoutWorkspace = acceptedBids.length > 0 && showEmpty;
   const showExpiredWithLocal = authRequired && workspaces.length > 0;
+  const showCloudBanner = authRequired && !localOnlyMode;
+  const showLocalOnlyBanner = authRequired && localOnlyMode;
 
   return (
     <div className="min-h-screen bg-background">
@@ -158,27 +190,48 @@ export default function Workspaces() {
       </div>
 
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-4">
-        {authRequired && (
-          <div className="rounded-2xl border border-border bg-card p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <p className="text-sm font-semibold text-foreground">
-                {showExpiredWithLocal ? "Your session expired" : "Sign in to sync cloud data"}
-              </p>
-              <p className="text-sm text-muted-foreground mt-1">
-                {showExpiredWithLocal
-                  ? "Local workspaces are temporarily available on this device. Sign in to restore cloud synchronization."
-                  : "Sign in to load awarded projects and collaboration spaces from Base44."}
-              </p>
+        {showCloudBanner && (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-6">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold text-foreground">Cloud session expired</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Your local workspace data remains available on this device.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2 shrink-0">
+                <Button type="button" variant="outline" className="rounded-xl" onClick={handleContinueLocally}>
+                  Continue locally
+                </Button>
+                <Button
+                  type="button"
+                  className="rounded-xl gap-2"
+                  disabled={isRetryingAuth}
+                  onClick={handleRestoreSession}
+                >
+                  {isRetryingAuth ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
+                  Restore session
+                </Button>
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2 shrink-0">
-              <Button type="button" className="rounded-xl gap-2" onClick={handleSignIn}>
-                <LogIn className="h-4 w-4" />
-                Sign in
-              </Button>
-              <Button type="button" variant="outline" className="rounded-xl" asChild>
-                <Link to="/create-profile">Create profile</Link>
-              </Button>
-            </div>
+          </div>
+        )}
+
+        {showLocalOnlyBanner && (
+          <div className="rounded-2xl border border-border bg-muted/30 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <p className="text-sm text-muted-foreground">
+              Working locally on this device. Cloud sync resumes when you restore your session.
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="rounded-lg shrink-0"
+              disabled={isRetryingAuth}
+              onClick={handleRestoreSession}
+            >
+              Restore session
+            </Button>
           </div>
         )}
 
@@ -200,16 +253,21 @@ export default function Workspaces() {
 
         {showEmpty ? (
           <div className="rounded-2xl border border-dashed border-border bg-card p-10 text-center space-y-4">
-            {authRequired && !showExpiredWithLocal && (
+            {authRequired && !localOnlyMode && !showExpiredWithLocal && (
               <>
                 <p className="text-sm font-semibold text-foreground">No workspaces yet</p>
                 <p className="text-sm text-muted-foreground">
-                  Sign in to load your awarded projects and collaboration spaces from Base44.
+                  Restore your session or continue with local data on this device.
                 </p>
-                <Button type="button" className="rounded-xl gap-2" onClick={handleSignIn}>
-                  <LogIn className="h-4 w-4" />
-                  Sign in to continue
-                </Button>
+                <div className="flex flex-wrap justify-center gap-2">
+                  <Button type="button" className="rounded-xl gap-2" disabled={isRetryingAuth} onClick={handleRestoreSession}>
+                    <LogIn className="h-4 w-4" />
+                    Restore session
+                  </Button>
+                  <Button type="button" variant="outline" className="rounded-xl" onClick={handleContinueLocally}>
+                    Continue locally
+                  </Button>
+                </div>
               </>
             )}
             {!authRequired && userRole === "professional" && acceptedBids.length > 0 && (
