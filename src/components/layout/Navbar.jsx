@@ -7,10 +7,27 @@ import { base44 } from "@/api/base44Client";
 import { trackCTAClick } from "@/lib/analytics";
 import { getAllBids } from "@/lib/bidStore";
 
+function TaxProLogo({ className = "" }) {
+  return (
+    <div className={`flex items-center gap-0.5 ${className}`}>
+      <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center">
+        <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4">
+          <path d="M10 2L3 6v8l7 4 7-4V6L10 2z" fill="white" fillOpacity="0.2" stroke="white" strokeWidth="1.2" strokeLinejoin="round"/>
+          <path d="M10 2v12M3 6l7 4 7-4" stroke="white" strokeWidth="1.2" strokeLinejoin="round"/>
+        </svg>
+      </div>
+      <span className="text-[17px] font-extrabold tracking-tight text-foreground ml-1.5">
+        TaxPro<span className="text-primary">UK</span>
+      </span>
+    </div>
+  );
+}
+
 export default function Navbar() {
   const [open, setOpen] = useState(false);
   const [bidCount, setBidCount] = useState(() => getAllBids().length);
   const location = useLocation();
+  const isOnboarding = location.pathname === "/create-profile";
 
   useEffect(() => {
     const refresh = () => setBidCount(getAllBids().length);
@@ -33,25 +50,31 @@ export default function Navbar() {
         : "text-muted-foreground hover:text-foreground hover:bg-secondary"
     }`;
 
+  if (isOnboarding) {
+    return (
+      <header className="sticky top-0 z-50 w-full border-b border-border/60 bg-white/95 backdrop-blur-xl">
+        <div className="max-w-3xl mx-auto flex h-14 items-center justify-between px-4 sm:px-6">
+          <Link to="/" className="shrink-0 group">
+            <TaxProLogo />
+          </Link>
+          <a
+            href="mailto:support@taxprouk.com?subject=TaxProUK%20onboarding%20help"
+            className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors duration-200"
+          >
+            Need help?
+          </a>
+        </div>
+      </header>
+    );
+  }
+
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/60 bg-white/90 backdrop-blur-xl">
       <div className="max-w-7xl mx-auto flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
-        {/* Logo */}
         <Link to="/" className="flex items-center gap-2 shrink-0 group">
-          <div className="flex items-center gap-0.5">
-            <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center">
-              <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4">
-                <path d="M10 2L3 6v8l7 4 7-4V6L10 2z" fill="white" fillOpacity="0.2" stroke="white" strokeWidth="1.2" strokeLinejoin="round"/>
-                <path d="M10 2v12M3 6l7 4 7-4" stroke="white" strokeWidth="1.2" strokeLinejoin="round"/>
-              </svg>
-            </div>
-            <span className="text-[17px] font-extrabold tracking-tight text-foreground ml-1.5">
-              TaxPro<span className="text-primary">UK</span>
-            </span>
-          </div>
+          <TaxProLogo />
         </Link>
 
-        {/* Desktop nav */}
         <nav className="hidden md:flex items-center gap-0.5">
           <Link to="/professionals" className={linkClass("/professionals")}>Find Experts</Link>
           <Link to="/jobs" className={linkClass("/jobs")}>Browse Projects</Link>
@@ -67,7 +90,6 @@ export default function Navbar() {
           <Link to="/workspaces" className={linkClass("/workspaces")}>Workspaces</Link>
         </nav>
 
-        {/* Desktop CTAs */}
         <div className="hidden md:flex items-center gap-2.5">
           <Link to="/create-profile" onClick={() => { base44.analytics.track({ eventName: "nav_cta_clicked", properties: { cta: "early_access" } }); trackCTAClick("Join Early Access", "/create-profile"); }}>
             <Button size="sm" variant="outline" className="font-bold rounded-lg h-9">
@@ -76,12 +98,11 @@ export default function Navbar() {
           </Link>
           <Link to="/post-job" onClick={() => { base44.analytics.track({ eventName: "nav_cta_clicked", properties: { cta: "post_project" } }); trackCTAClick("Post a Project Free", "/post-job"); }}>
             <Button size="sm" className="font-bold rounded-lg h-9 shadow-sm bg-gradient-to-r from-violet-600 to-primary border-0">
-              ⚡ Post a Project Free
+              Post a Project Free
             </Button>
           </Link>
         </div>
 
-        {/* Mobile hamburger */}
         <Sheet open={open} onOpenChange={setOpen}>
           <SheetTrigger asChild className="md:hidden">
             <Button variant="ghost" size="icon" className="rounded-lg">
@@ -89,14 +110,8 @@ export default function Navbar() {
             </Button>
           </SheetTrigger>
           <SheetContent side="right" className="w-72 pt-10">
-            <div className="flex items-center gap-2 mb-8">
-              <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center">
-                <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4">
-                  <path d="M10 2L3 6v8l7 4 7-4V6L10 2z" fill="white" fillOpacity="0.2" stroke="white" strokeWidth="1.2" strokeLinejoin="round"/>
-                  <path d="M10 2v12M3 6l7 4 7-4" stroke="white" strokeWidth="1.2" strokeLinejoin="round"/>
-                </svg>
-              </div>
-              <span className="font-extrabold text-foreground">TaxPro<span className="text-primary">UK</span></span>
+            <div className="mb-8">
+              <TaxProLogo />
             </div>
             <nav className="flex flex-col gap-1">
               {[
@@ -120,7 +135,7 @@ export default function Navbar() {
                 <Button variant="outline" className="w-full mb-2 rounded-lg font-bold">Join Early Access</Button>
               </Link>
               <Link to="/post-job" onClick={() => setOpen(false)}>
-                <Button className="w-full rounded-lg font-bold">⚡ Post a Project Free</Button>
+                <Button className="w-full rounded-lg font-bold">Post a Project Free</Button>
               </Link>
             </nav>
           </SheetContent>

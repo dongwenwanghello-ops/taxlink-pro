@@ -11,6 +11,7 @@ import {
   reconcileMarketplaceState,
   WORKFLOW_EVENTS,
 } from "@/lib/marketplaceState";
+import { INTEGRATION_EVENTS } from "@/lib/marketplaceIntegrations";
 
 const MarketplaceWorkflowContext = createContext(null);
 
@@ -27,7 +28,13 @@ export function MarketplaceWorkflowProvider({ children }) {
 
   useEffect(() => {
     refresh();
-    const onWorkflow = () => {
+    const onWorkflow = (event) => {
+      const fromReconcile = event?.detail?.snapshot;
+      if (fromReconcile) {
+        setSnapshot(fromReconcile);
+        setLastReconcile(event.detail);
+        return;
+      }
       setSnapshot(buildWorkflowSnapshot());
       setLastReconcile((prev) => prev || { ok: true });
     };
@@ -41,6 +48,8 @@ export function MarketplaceWorkflowProvider({ children }) {
       "projectUpdated",
       "projectCompleted",
       "bidSubmitted",
+      INTEGRATION_EVENTS.profileUpdated,
+      INTEGRATION_EVENTS.earlyAccessSignup,
     ];
     events.forEach((e) => window.addEventListener(e, onWorkflow));
     return () => events.forEach((e) => window.removeEventListener(e, onWorkflow));

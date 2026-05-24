@@ -5,6 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, MapPin, Clock, PoundSterling, Pencil, ExternalLink, Loader2, UserPlus, Eye, EyeOff, Lock, Sparkles } from "lucide-react";
 import { motion } from "framer-motion";
+import ProfessionalQualificationLines from "@/components/shared/ProfessionalQualificationLines";
+import ProfessionalExpertiseDisplay from "@/components/shared/ProfessionalExpertiseDisplay";
+import { buildQualificationSummaryLines } from "@/lib/professionalProfileModel";
+import { advisorUrl } from "@/lib/advisorProfiles";
 
 const ROLE_LABELS = {
   client: "Client",
@@ -64,11 +68,7 @@ export default function MyProfile() {
   const vis = visibilityConfig[profile.visibility] || (isPrivateProfile ? visibilityConfig.private : visibilityConfig.public);
   const avail = availabilityConfig[profile.availability] || availabilityConfig.available;
   const initials = (profile.full_name || "").split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
-  const trustSummary = [
-    ...(profile.qualifications || []).slice(0, 2),
-    profile.years_experience ? `${profile.years_experience}+ years experience` : null,
-    ...(profile.specialisations || []).slice(0, 2),
-  ].filter(Boolean);
+  const trustSummary = buildQualificationSummaryLines(profile);
 
   return (
     <div className="min-h-screen bg-background">
@@ -80,7 +80,7 @@ export default function MyProfile() {
           </div>
           <div className="flex gap-2">
             {profile.slug && (
-              <Link to={`/professionals/${profile.slug || profile.id}`} target="_blank">
+              <Link to={advisorUrl(profile)} target="_blank">
                 <Button variant="outline" size="sm" className="gap-1.5 rounded-lg">
                   <ExternalLink className="h-3.5 w-3.5" /> View Public
                 </Button>
@@ -159,6 +159,7 @@ export default function MyProfile() {
             <div className="flex-1 min-w-0">
               <h2 className="text-xl font-bold text-foreground">{profile.display_name || profile.full_name}</h2>
               <p className="text-muted-foreground text-sm mt-0.5">{profile.headline || profile.title}</p>
+              <ProfessionalQualificationLines profile={profile} className="mt-2" />
               <Badge variant="outline" className="mt-2 text-xs">
                 {ROLE_LABELS[profile.user_role] || "Professional"}
               </Badge>
@@ -201,13 +202,9 @@ export default function MyProfile() {
             </div>
           )}
 
-          {profile.specialisations?.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {profile.specialisations.map(s => (
-                <Badge key={s} variant="secondary" className="font-medium">{s}</Badge>
-              ))}
-            </div>
-          )}
+          <div className="mt-4 border-t border-border/50 pt-4">
+            <ProfessionalExpertiseDisplay profile={profile} />
+          </div>
         </motion.div>
 
         {/* Actions */}

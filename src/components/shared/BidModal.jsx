@@ -25,6 +25,7 @@ import {
   resolveProposalOutput,
 } from "@/lib/proposalAssistant";
 import { buildBidIdentityFromSources } from "@/lib/professionalIdentity";
+import { normalizeExpertise } from "@/lib/expertiseMatching";
 
 const TIMELINE_OPTIONS = [
   { value: "24h", label: "Within 24 hours", hint: "Best for urgent/simple requests", urgency: "high" },
@@ -310,11 +311,26 @@ export default function BidModal({ job, onClose, onBidSubmitted, onSubmitSuccess
         bidderEmail = authUser?.email || "";
       } catch {}
 
+      const { primary: primaryExpertise, secondary: secondaryExpertise, all: allExpertise } =
+        normalizeExpertise({
+          primary_expertise: professionalProfile?.primary_expertise,
+          secondary_expertise: professionalProfile?.secondary_expertise,
+          specialisations: professionalProfile?.specialisations,
+        });
+
       const professionalCredentials = {
-        qualifications: selectedQualifications,
-        years_experience: yearsExperience,
+        qualifications: selectedQualifications.length ? selectedQualifications : professionalProfile?.qualifications || [],
+        years_experience: yearsExperience || professionalProfile?.years_experience,
+        years_experience_numeric: professionalProfile?.years_experience_numeric,
         headline: professionalProfile?.headline || professionalProfile?.title || "",
-        specialisations: professionalProfile?.specialisations || [],
+        specialisations: primaryExpertise,
+        primary_expertise: primaryExpertise,
+        secondary_expertise: secondaryExpertise,
+        qualification_status: professionalProfile?.qualification_status,
+        qualification_body: professionalProfile?.qualification_body,
+        professional_level: professionalProfile?.professional_level,
+        professional_background: professionalProfile?.professional_background,
+        previous_employer: professionalProfile?.previous_employer,
         user_role: professionalProfile?.user_role || localStorage.getItem("user_role") || "professional",
       };
 
@@ -340,7 +356,9 @@ export default function BidModal({ job, onClose, onBidSubmitted, onSubmitSuccess
         ...identityFields,
         bidder_headline: professionalProfile?.headline || professionalProfile?.title || "",
         bidder_bio: professionalProfile?.bio || "",
-        bidder_specialisms: professionalProfile?.specialisations || [],
+        bidder_specialisms: allExpertise,
+        bidder_primary_specialisms: primaryExpertise,
+        bidder_secondary_specialisms: secondaryExpertise,
         bidder_role: professionalProfile?.user_role || localStorage.getItem("user_role") || "professional",
         bidder_qual: selectedQualifications[0] || "",
         bidder_quals: selectedQualifications,

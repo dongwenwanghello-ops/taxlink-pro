@@ -6,6 +6,40 @@ export const LOW_FRICTION_REASSURANCE = [
   "No subscription required",
 ];
 
+export const EMAIL_TRUST_INDICATORS = [
+  "No subscription required",
+  "Secure registration",
+  "Takes under 1 minute",
+];
+
+export const ONBOARDING_HERO = {
+  professional: {
+    headline: "Grow your UK tax practice",
+    subheadline: "Join free and get matched with real client projects.",
+  },
+  client: {
+    headline: "Find the right UK tax expert",
+    subheadline: "Compare verified professionals and receive quotes.",
+  },
+};
+
+export const ROLE_CARD_CONFIG = {
+  professional: {
+    value: "professional",
+    title: "I want clients",
+    subtitle: "Win UK tax projects and grow your practice",
+    benefits: ["Real UK clients", "Free to join", "AI project matching"],
+    ctaLabel: "Continue to create profile",
+  },
+  client: {
+    value: "client",
+    title: "I need tax help",
+    subtitle: "Find and compare trusted professionals",
+    benefits: ["Compare quotes", "Verified experts", "Fast matching"],
+    ctaLabel: "Find my expert",
+  },
+};
+
 export const MARKETPLACE_ACTIVITY_SIGNALS = [
   { id: "joining", text: "UK tax professionals joining weekly" },
   { id: "vat", text: "New VAT projects posted regularly" },
@@ -19,41 +53,34 @@ export const PROFESSIONAL_IDENTITY_SIGNALS = [
   "Build trusted professional reputation",
 ];
 
+/** @deprecated Use ROLE_CARD_CONFIG — kept for any legacy imports */
 export const ROLE_OPTIONS = [
   {
     value: "professional",
     label: "I'm a tax/accounting professional",
-    shortDesc: "Win UK client work and grow your practice",
+    shortDesc: ROLE_CARD_CONFIG.professional.subtitle,
     stepOneHook: "Get matched with real UK tax & accounting projects",
-    benefits: [
-      "Get matched with UK tax & accounting projects",
-      "Build your verified professional profile",
-      "Receive relevant client opportunities",
-    ],
+    benefits: ROLE_CARD_CONFIG.professional.benefits,
   },
   {
     value: "client",
     label: "I'm looking for professional help",
-    shortDesc: "Find the right expert for your tax needs",
+    shortDesc: ROLE_CARD_CONFIG.client.subtitle,
     stepOneHook: "Compare verified professionals and quotes",
-    benefits: [
-      "Find trusted UK tax professionals",
-      "Compare expertise and quotes",
-      "Start projects quickly and securely",
-    ],
+    benefits: ROLE_CARD_CONFIG.client.benefits,
   },
 ];
 
 export const PROFESSIONAL_ONBOARDING_STEPS = [
-  { id: 1, label: "Join", title: "Join the marketplace", subtitle: "Choose your role and save your spot" },
-  { id: 2, label: "Basics", title: "Your professional identity", subtitle: "Just the essentials — details come next" },
-  { id: 3, label: "Expertise", title: "Qualifications & services", subtitle: "Help clients understand your strengths" },
+  { id: 1, label: "Join", title: "Grow your UK tax practice", subtitle: "Choose your role and save your spot" },
+  { id: 2, label: "Basics", title: "Your professional identity", subtitle: "Experience level and how clients see you" },
+  { id: 3, label: "Expertise", title: "Qualifications & expertise", subtitle: "UK-realistic paths — primary (3) + secondary (10)" },
   { id: 4, label: "Visibility", title: "Profile visibility", subtitle: "You control how you appear on TaxLink" },
   { id: 5, label: "Enhance", title: "Enhance with AI", subtitle: "Optional — polish your profile in seconds" },
 ];
 
 export const CLIENT_ONBOARDING_STEPS = [
-  { id: 1, label: "Join", title: "Join the marketplace", subtitle: "Find trusted UK tax professionals" },
+  { id: 1, label: "Join", title: "Find the right UK tax expert", subtitle: "Tell us how we can help" },
   { id: 2, label: "Preferences", title: "Your needs", subtitle: "Optional — improves matching" },
 ];
 
@@ -61,15 +88,17 @@ export const TOP_QUALIFICATIONS = ["ACCA", "ACA", "CTA", "ATT", "AAT", "ICAEW"];
 export const MORE_QUALIFICATIONS = ["AATQB", "ICAS", "CIMA", "CIPFA", "FCA", "FCCA"];
 
 export const TOP_SERVICES = [
-  "Self Assessment", "VAT", "Corporation Tax", "Bookkeeping", "Payroll", "Tax Planning",
+  "Self Assessment", "VAT", "Corporation Tax", "Capital Gains", "Payroll", "Tax Planning",
 ];
 export const MORE_SERVICES = [
-  "VAT Specialist", "Payroll Specialist", "Audit", "R&D Tax Credits", "Capital Gains",
-  "Inheritance Tax", "Property Tax", "Making Tax Digital", "Annual Accounts",
-  "Management Accounts", "Landlord Tax", "CIS Returns", "HMRC Investigations",
+  "Employment Tax", "Share Schemes", "R&D Tax Credits", "Bookkeeping", "Audit",
+  "HMRC Investigations", "Property Tax", "Inheritance Tax", "Making Tax Digital",
+  "Annual Accounts", "Management Accounts", "Landlord Tax", "CIS Returns",
+  "VAT Specialist", "Payroll Specialist",
 ];
 
-export const MAX_PRIMARY_SERVICES = 3;
+/** @deprecated Import from expertiseMatching.js */
+export { MAX_PRIMARY_EXPERTISE, MAX_SECONDARY_EXPERTISE } from "@/lib/expertiseMatching";
 
 export const VISIBILITY_OPTIONS = [
   {
@@ -100,6 +129,16 @@ export function getOnboardingProgressPercent(step, role) {
   const steps = getOnboardingSteps(role);
   if (!steps.length) return 0;
   return Math.round((step / steps.length) * 100);
+}
+
+export function getOnboardingEffortMessage(step, role) {
+  const total = getOnboardingSteps(role).length;
+  if (step >= total) return "Final step — you're almost done";
+  return "Almost there — takes less than 1 minute";
+}
+
+export function getStepOneCtaLabel(role) {
+  return ROLE_CARD_CONFIG[role]?.ctaLabel || "Continue";
 }
 
 export function resolvePublicDisplayName(legalName, displayName) {

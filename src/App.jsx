@@ -5,7 +5,7 @@ import WorkflowSyncIndicator from "@/components/shared/WorkflowSyncIndicator"
 import { QueryClientProvider } from "@tanstack/react-query"
 import { queryClientInstance } from "@/lib/query-client"
 
-import { Routes, Route } from "react-router-dom"
+import { Routes, Route, Navigate, useParams } from "react-router-dom"
 
 import PageNotFound from "./lib/PageNotFound"
 import { AuthProvider, useAuth } from "@/lib/AuthContext"
@@ -21,6 +21,7 @@ import CreateProfile from "./pages/CreateProfile"
 import PostJob from "./pages/PostJob"
 import Reviews from "./pages/Reviews"
 import ProfileDetail from "./pages/ProfileDetail"
+import AdvisorDetail from "./pages/AdvisorDetail"
 import BidderPublicProfile from "./pages/BidderPublicProfile"
 import ProjectDetail from "./pages/ProjectDetail"
 import MyProjects from "./pages/MyProjects"
@@ -29,6 +30,11 @@ import MyProfile from "./pages/MyProfile"
 import Workspaces from "./pages/Workspaces"
 import ProjectWorkspace from "./pages/ProjectWorkspace"
 import MyBidsDemo from "./components/emptyStates/MyBidsDemo"
+
+function AdvisorRedirect() {
+  const { advisorId } = useParams();
+  return <Navigate to={`/advisor/${advisorId}`} replace />;
+}
 
 const AuthenticatedApp = () => {
   const {
@@ -68,6 +74,8 @@ const AuthenticatedApp = () => {
         <Route path="/post-job" element={<PostJob />} />
         <Route path="/reviews" element={<Reviews />} />
         <Route path="/profile/:id" element={<ProfileDetail />} />
+        <Route path="/advisor/:id" element={<AdvisorDetail />} />
+        <Route path="/professionals/:advisorId" element={<AdvisorRedirect />} />
         <Route path="/professionals/bid/:bidId" element={<BidderPublicProfile />} />
         <Route path="/project/:id" element={<ProjectDetail />} />
         <Route path="/my-projects" element={<MyProjects />} />

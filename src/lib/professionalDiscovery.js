@@ -2,6 +2,8 @@
  * Client-facing professional discovery — problem-first, trust-led, not directory pricing.
  */
 
+import { normalizeExpertise, PRIMARY_MATCH_WEIGHT, SECONDARY_MATCH_WEIGHT, scoreProfessionalMatch } from "@/lib/expertiseMatching";
+
 function seeded(str = "", salt = 0) {
   return String(str).split("").reduce((acc, ch) => acc + ch.charCodeAt(0), 0) + salt;
 }
@@ -90,7 +92,7 @@ export function buildExpertiseIdentityHeadline(profile) {
         : quals.includes("ATT")
           ? "ATT"
           : quals[0] || "";
-  const specs = profile.specialisations || [];
+  const { primary: specs } = normalizeExpertise(profile);
   const focus =
     specs.length >= 2
       ? `${specs[0]} & ${specs[1]}`
@@ -103,7 +105,7 @@ export function buildExpertiseIdentityHeadline(profile) {
 }
 
 export function buildOutcomeLine(profile) {
-  const specs = profile.specialisations || [];
+  const { primary: specs } = normalizeExpertise(profile);
   for (const s of specs) {
     if (OUTCOME_SNIPPETS[s]) return OUTCOME_SNIPPETS[s];
   }
@@ -188,18 +190,28 @@ export function getTypicalEngagementLabel(profile) {
 }
 
 function profileTextBlob(p) {
-  return `${p.bio || ""} ${p.title || ""} ${(p.specialisations || []).join(" ")}`.toLowerCase();
+  const { all } = normalizeExpertise(p);
+  return `${p.bio || ""} ${p.title || ""} ${all.join(" ")}`.toLowerCase();
+}
+
+function expertiseListScore(profile, serviceName, basePoints = 28) {
+  const { primary, secondary } = normalizeExpertise(profile);
+  if (primary.includes(serviceName)) return basePoints * PRIMARY_MATCH_WEIGHT;
+  if (secondary.includes(serviceName)) return basePoints * SECONDARY_MATCH_WEIGHT;
+  return 0;
 }
 
 export function discoveryFitScore(profile, needId = null, search = "") {
   let score = 0;
   const need = needId ? CLIENT_NEED_OPTIONS.find((n) => n.id === needId) : null;
   const blob = profileTextBlob(profile);
+  const needProject = need ? { category: need.id, title: need.label, service_tags: need.specMatch } : {};
+  score += scoreProfessionalMatch(profile, needProject).score * 0.15;
 
   if (need) {
     if (need.bioPattern && need.bioPattern.test(`${profile.bio || ""} ${profile.title || ""}`)) score += 45;
     for (const s of need.specMatch || []) {
-      if (profile.specialisations?.includes(s)) score += 28;
+      score += expertiseListScore(profile, s, 28);
     }
   }
 
@@ -207,8 +219,11 @@ export function discoveryFitScore(profile, needId = null, search = "") {
     const q = search.toLowerCase();
     if ((profile.full_name || "").toLowerCase().includes(q)) score += 20;
     if (blob.includes(q)) score += 25;
-    for (const s of profile.specialisations || []) {
-      if (s.toLowerCase().includes(q)) score += 22;
+    const { primary, secondary } = normalizeExpertise(profile);
+    for (const s of [...primary, ...secondary]) {
+      if (s.toLowerCase().includes(q)) {
+        score += primary.includes(s) ? 22 : 22 * SECONDARY_MATCH_WEIGHT;
+      }
     }
   }
 
@@ -250,7 +265,7 @@ const INDUSTRY_HUMAN = {
 export function oftenSelectedFor(profile, needId = null, max = 3) {
   const lines = [];
   const need = needId ? CLIENT_NEED_OPTIONS.find((n) => n.id === needId) : null;
-  const specs = profile.specialisations || [];
+  const { primary: specs, secondary: secondarySpecs } = normalizeExpertise(profile);
   const bioTitle = `${profile.bio || ""} ${profile.title || ""}`;
 
   if (need?.id === "hmrc" || /hmrc|enquir|investigat|inspector/i.test(bioTitle)) {
@@ -264,6 +279,10 @@ export function oftenSelectedFor(profile, needId = null, max = 3) {
 
   for (const s of specs) {
     if (SPEC_HUMAN[s] && !lines.includes(SPEC_HUMAN[s])) lines.push(SPEC_HUMAN[s]);
+  }
+  for (const s of secondarySpecs.slice(0, 2)) {
+    const line = SPEC_HUMAN[s] ? `${SPEC_HUMAN[s]} (also: ${s})` : null;
+    if (line && !lines.includes(line)) lines.push(line);
   }
 
   for (const ind of profile.industries || []) {

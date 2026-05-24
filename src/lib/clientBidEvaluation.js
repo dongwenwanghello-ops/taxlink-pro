@@ -2,6 +2,7 @@
  * Client-side bid evaluation — expertise-first, not price-first.
  */
 import { enrichBidIdentity } from "@/lib/professionalIdentity";
+import { normalizeExpertise, scoreExpertiseForProject } from "@/lib/expertiseMatching";
 import { getQuoteAlignmentSignal } from "@/lib/guidedPricing";
 import { scoreMarketplaceProject } from "@/lib/marketplaceIntelligence";
 
@@ -60,14 +61,31 @@ export function buildProfessionalFitReasons(bid, project = null, marketplaceScor
     });
   }
 
-  const specialisms = enriched.bidder_specialisms
-    || enriched.professional_credentials?.specialisations
-    || enriched.specialties
-    || [];
+  const expertise = normalizeExpertise({
+    primary_expertise: enriched.bidder_primary_specialisms,
+    secondary_expertise: enriched.bidder_secondary_specialisms,
+    specialisations: enriched.bidder_specialisms,
+    professional_credentials: enriched.professional_credentials,
+    specialties: enriched.specialties,
+  });
 
   const categoryLabel = (project?.category || "").replace(/_/g, " ");
-  if (specialisms.length > 0 && categoryLabel) {
-    const match = specialisms.some((s) =>
+  const { primaryHits, secondaryHits } = project
+    ? scoreExpertiseForProject(expertise, project)
+    : { primaryHits: 0, secondaryHits: 0 };
+
+  if (primaryHits > 0 && categoryLabel) {
+    reasons.push({
+      id: "specialism",
+      text: `Primary expertise matches your ${categoryLabel} project`,
+    });
+  } else if (secondaryHits > 0 && categoryLabel) {
+    reasons.push({
+      id: "specialism-secondary",
+      text: `Secondary expertise relevant to your ${categoryLabel} project`,
+    });
+  } else if (expertise.all.length > 0 && categoryLabel) {
+    const match = expertise.all.some((s) =>
       categoryLabel.includes(String(s).toLowerCase().replace(/ /g, "_"))
       || String(s).toLowerCase().includes(categoryLabel.split(" ")[0]),
     );
@@ -77,7 +95,7 @@ export function buildProfessionalFitReasons(bid, project = null, marketplaceScor
         text: `Experience relevant to your ${categoryLabel} project`,
       });
     }
-  } else if (categoryLabel && /vat|tax|bookkeeping|payroll|hmrc/i.test(categoryLabel + specialisms.join(" "))) {
+  } else if (categoryLabel && /vat|tax|bookkeeping|payroll|hmrc/i.test(categoryLabel + expertise.all.join(" "))) {
     reasons.push({
       id: "category",
       text: `Works on similar ${categoryLabel} projects`,

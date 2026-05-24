@@ -4,7 +4,10 @@ import { Badge } from "@/components/ui/badge";
 import { MapPin, Clock, PoundSterling, CheckCircle2, Wifi, ArrowRight, Briefcase, TrendingUp, Star, ShieldCheck } from "lucide-react";
 import VerificationBadge from "./VerificationBadge";
 import StarRating from "./StarRating";
+import ProfessionalQualificationLines from "./ProfessionalQualificationLines";
+import ProfessionalExpertiseDisplay from "./ProfessionalExpertiseDisplay";
 import { motion } from "framer-motion";
+import { advisorUrl } from "@/lib/advisorProfiles";
 
 // Deterministic seeded reputation metrics per profile
 function seeded(id = "", offset = 0) {
@@ -46,7 +49,7 @@ export default function ProfileCard({ profile, featured = false }) {
 
   return (
     <motion.div whileHover={{ y: -2 }} transition={{ duration: 0.15 }}>
-      <Link to={`/professionals/${profile.slug || profile.id}`} className="block h-full">
+      <Link to={advisorUrl(profile)} className="block h-full">
         <div className={`relative flex flex-col rounded-2xl border bg-card overflow-hidden transition-shadow duration-300 hover:shadow-xl hover:shadow-primary/8 h-full ${
           featured ? "border-primary/30 ring-1 ring-primary/20" : "border-border/70"
         }`}>
@@ -81,6 +84,7 @@ export default function ProfileCard({ profile, featured = false }) {
                   {isVerified && <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />}
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{profile.title}</p>
+                <ProfessionalQualificationLines profile={profile} className="mt-1" />
                 <div className="mt-1.5">
                   <StarRating rating={rating} total={reviewCount} />
                 </div>
@@ -104,17 +108,7 @@ export default function ProfileCard({ profile, featured = false }) {
               </div>
             )}
 
-            {/* Specialisations */}
-            {profile.specialisations?.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {profile.specialisations.slice(0, 3).map((spec) => (
-                  <Badge key={spec} variant="secondary" className="text-xs font-normal rounded-md">{spec}</Badge>
-                ))}
-                {profile.specialisations.length > 3 && (
-                  <Badge variant="secondary" className="text-xs font-normal rounded-md">+{profile.specialisations.length - 3}</Badge>
-                )}
-              </div>
-            )}
+            <ProfessionalExpertiseDisplay profile={profile} compact />
 
             {/* Reputation metrics strip */}
             <div className="grid grid-cols-3 gap-1.5 border-t border-border/50 pt-3 mt-auto">

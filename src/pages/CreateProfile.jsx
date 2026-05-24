@@ -8,22 +8,32 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import {
   X, Loader2, ArrowLeft, ArrowRight, CheckCircle2, Mail, Briefcase, Sparkles, Users,
-  ShieldCheck, Clock, BadgeCheck, Zap, Lock, ChevronDown, ChevronUp, Eye, EyeOff,
+  ShieldCheck, Zap, Lock, ChevronDown, ChevronUp, Eye, EyeOff,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import AiBioGenerator from "@/components/createProfile/AiBioGenerator";
+import { motion, AnimatePresence } from "framer-motion";
 import OnboardingProgress from "@/components/onboarding/OnboardingProgress";
-import OnboardingActivityStrip from "@/components/onboarding/OnboardingActivityStrip";
+import OnboardingRoleCards from "@/components/onboarding/OnboardingRoleCards";
+import OnboardingTrustSection from "@/components/onboarding/OnboardingTrustSection";
+import ExpertisePicker from "@/components/onboarding/ExpertisePicker";
+import QualificationSection from "@/components/onboarding/QualificationSection";
+import { normalizeExpertise } from "@/lib/expertiseMatching";
 import {
-  ROLE_OPTIONS,
-  LOW_FRICTION_REASSURANCE,
+  EMPTY_PROFESSIONAL_CREDENTIALS,
+  buildMatchingProfilePayload,
+  PROFESSIONAL_LEVEL_OPTIONS,
+} from "@/lib/professionalProfileModel";
+import { advisorUrl } from "@/lib/advisorProfiles";
+import { syncMarketplaceAfterProfileSave } from "@/lib/marketplaceIntegrations";
+import {
+  EMAIL_TRUST_INDICATORS,
+  ONBOARDING_HERO,
   getOnboardingSteps,
-  TOP_QUALIFICATIONS,
-  MORE_QUALIFICATIONS,
+  getStepOneCtaLabel,
   TOP_SERVICES,
   MORE_SERVICES,
-  MAX_PRIMARY_SERVICES,
   VISIBILITY_OPTIONS,
   CLIENT_TYPES,
   PROJECT_INTERESTS,
@@ -66,6 +76,8 @@ const INITIAL_FORM = {
   years_experience: "",
   availability: "available",
   qualifications: [],
+  primary_expertise: [],
+  secondary_expertise: [],
   specialisations: [],
   visibility: "private",
   reveal_contact_after_award: true,
@@ -73,6 +85,7 @@ const INITIAL_FORM = {
   project_interests: [],
   bio: "",
   bio_notes: "",
+  ...EMPTY_PROFESSIONAL_CREDENTIALS,
 };
 
 export default function CreateProfile() {
@@ -87,31 +100,75 @@ export default function CreateProfile() {
 
   const steps = useMemo(() => getOnboardingSteps(form.user_role), [form.user_role]);
   const totalSteps = steps.length;
-  const selectedRole = ROLE_OPTIONS.find((r) => r.value === form.user_role);
   const isProfessional = form.user_role === "professional";
+  const hero = ONBOARDING_HERO[form.user_role] || ONBOARDING_HERO.professional;
+  const stepOneCta = getStepOneCtaLabel(form.user_role);
   const isLastStep = step >= totalSteps;
 
   useEffect(() => {
     setStep((current) => Math.min(current, getOnboardingSteps(form.user_role).length));
   }, [form.user_role]);
 
+  /** Resume / edit — hydrate from saved profile */
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("my_profile");
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      if (!saved?.email) return;
+      setForm((prev) => ({
+        ...prev,
+        email: saved.email || prev.email,
+        user_role: saved.user_role || prev.user_role,
+        legal_name: saved.legal_name || saved.full_name || prev.legal_name,
+        display_name: saved.display_name || prev.display_name,
+        years_experience: saved.years_experience || prev.years_experience,
+        availability: saved.availability || prev.availability,
+        qualifications: saved.qualifications || prev.qualifications,
+        primary_expertise: saved.primary_expertise || saved.specialisations || prev.primary_expertise,
+        secondary_expertise: saved.secondary_expertise || prev.secondary_expertise,
+        visibility: saved.visibility || prev.visibility,
+        bio: saved.bio || prev.bio,
+        qualification_status: saved.qualification_status || prev.qualification_status,
+        qualification_body: saved.qualification_body || prev.qualification_body,
+        qualification_year_obtained: saved.qualification_year_obtained || prev.qualification_year_obtained,
+        qualification_progress_papers: saved.qualification_progress_papers || prev.qualification_progress_papers,
+        qualification_progress_pct: saved.qualification_progress_pct || prev.qualification_progress_pct,
+        qualification_expected_completion: saved.qualification_expected_completion || prev.qualification_expected_completion,
+        years_experience_numeric: saved.years_experience_numeric || prev.years_experience_numeric,
+        previous_employer: saved.previous_employer || prev.previous_employer,
+        professional_background: saved.professional_background || prev.professional_background,
+        professional_level: saved.professional_level || prev.professional_level,
+      }));
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const expertise = useMemo(() => normalizeExpertise(form), [form]);
+
   const aiBioForm = useMemo(() => ({
     ...form,
     full_name: form.legal_name,
     qualifications: form.qualifications,
-    specialisations: form.specialisations,
+    qualification_status: form.qualification_status,
+    qualification_body: form.qualification_body,
+    professional_level: form.professional_level,
+    specialisations: expertise.all,
+    primary_expertise: expertise.primary,
+    secondary_expertise: expertise.secondary,
     title: "UK tax and accounting professional",
     headline: "UK tax and accounting professional",
     location: "UK",
     remote_work: true,
     software_expertise: [],
-  }), [form]);
+  }), [form, expertise]);
 
   const toggleItem = (field, item, maxItems) => {
     setForm((prev) => {
       const has = prev[field].includes(item);
       if (!has && maxItems && prev[field].length >= maxItems) {
-        toast.message(`Select up to ${maxItems} primary services for now. You can add more later.`);
+        toast.message(`You can select up to ${maxItems} items here.`);
         return prev;
       }
       return {
@@ -182,8 +239,23 @@ export default function CreateProfile() {
         visibility: form.visibility,
         reveal_contact_after_award: form.reveal_contact_after_award,
         profile_visibility_setup_pending: false,
-        specialties: isProfessional ? form.specialisations : form.project_interests,
+        specialties: isProfessional ? expertise.primary : form.project_interests,
+        primary_expertise: isProfessional ? expertise.primary : [],
+        secondary_expertise: isProfessional ? expertise.secondary : [],
+        primary_services: isProfessional ? expertise.primary : [],
+        secondary_services: isProfessional ? expertise.secondary : [],
+        qualification_status: isProfessional ? form.qualification_status : "",
+        qualification_body: isProfessional ? form.qualification_body : "",
+        qualification_year_obtained: isProfessional ? form.qualification_year_obtained : "",
+        qualification_progress_papers: isProfessional ? form.qualification_progress_papers : "",
+        qualification_progress_pct: isProfessional ? form.qualification_progress_pct : "",
+        qualification_expected_completion: isProfessional ? form.qualification_expected_completion : "",
+        years_experience_numeric: isProfessional ? form.years_experience_numeric : "",
+        previous_employer: isProfessional ? form.previous_employer : "",
+        professional_background: isProfessional ? form.professional_background : "",
+        professional_level: isProfessional ? form.professional_level : "",
         qualifications: isProfessional ? form.qualifications : [],
+        matching_profile: isProfessional ? buildMatchingProfilePayload({ ...form, ...expertise }) : null,
         years_experience: isProfessional ? form.years_experience : "",
         availability: isProfessional ? form.availability : "",
         client_type: !isProfessional ? form.client_type : "",
@@ -196,8 +268,14 @@ export default function CreateProfile() {
       const saved = saveEarlyAccessSignup(signup);
       localStorage.setItem("user_role", signup.role);
 
+      if (!isProfessional) {
+        syncMarketplaceAfterProfileSave({ email: signup.email, user_role: signup.role });
+      }
+
       if (isProfessional) {
-        localStorage.setItem("my_profile", JSON.stringify({
+        const myProfile = {
+          id: signup.id || `profile_${Date.now()}`,
+          slug: signup.id?.replace(/^early_/, "advisor-") || `advisor-${Date.now()}`,
           user_role: "professional",
           email: signup.email,
           full_name: signup.full_name,
@@ -210,20 +288,42 @@ export default function CreateProfile() {
           profile_visibility_setup_pending: false,
           qualifications: signup.qualifications,
           specialisations: signup.specialties,
+          primary_expertise: signup.primary_expertise,
+          secondary_expertise: signup.secondary_expertise,
+          primary_services: signup.primary_services,
+          secondary_services: signup.secondary_services,
+          qualification_status: signup.qualification_status,
+          qualification_body: signup.qualification_body,
+          qualification_year_obtained: signup.qualification_year_obtained,
+          qualification_progress_papers: signup.qualification_progress_papers,
+          qualification_progress_pct: signup.qualification_progress_pct,
+          qualification_expected_completion: signup.qualification_expected_completion,
+          years_experience_numeric: signup.years_experience_numeric,
+          previous_employer: signup.previous_employer,
+          professional_background: signup.professional_background,
+          professional_level: signup.professional_level,
+          matching_profile: signup.matching_profile,
           years_experience: signup.years_experience,
           availability: signup.availability,
           bio: signup.bio,
           headline: signup.qualifications.length
             ? `${signup.qualifications.slice(0, 2).join(" / ")} Tax Professional`
             : "UK Tax & Accounting Professional",
-        }));
+        };
+        localStorage.setItem("my_profile", JSON.stringify(myProfile));
+        syncMarketplaceAfterProfileSave(myProfile);
       }
 
       base44.analytics.track({
         eventName: "early_access_signup",
         properties: { role: signup.role, steps: totalSteps },
       });
-      setSavedSignup(saved);
+      setSavedSignup({
+        ...saved,
+        advisorSlug: isProfessional
+          ? JSON.parse(localStorage.getItem("my_profile") || "{}").slug
+          : null,
+      });
       setSubmitted(true);
     } catch (err) {
       toast.error(err?.message || "Could not save your request. Please try again.");
@@ -235,8 +335,13 @@ export default function CreateProfile() {
   const renderStepContent = () => {
     if (step === 1) {
       return (
-        <div className="space-y-6">
-          <div className="space-y-2">
+        <div className="space-y-10">
+          <OnboardingRoleCards
+            value={form.user_role}
+            onChange={(user_role) => setForm({ ...form, user_role })}
+          />
+
+          <div className="space-y-3">
             <Label htmlFor="email">Email address *</Label>
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -246,40 +351,17 @@ export default function CreateProfile() {
                 placeholder="you@example.com"
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
-                className="pl-9 h-11"
+                className="pl-9 h-12 rounded-xl"
               />
             </div>
-            <p className="text-xs text-muted-foreground">
-              We&apos;ll only contact you about marketplace access and relevant opportunities.
-            </p>
-          </div>
-
-          <div className="space-y-3">
-            <Label>How will you use TaxLink?</Label>
-            <div className="grid grid-cols-1 gap-3">
-              {ROLE_OPTIONS.map((role) => (
-                <button
-                  key={role.value}
-                  type="button"
-                  onClick={() => {
-                    setForm({ ...form, user_role: role.value });
-                    setStep(1);
-                  }}
-                  className={`rounded-2xl border p-4 text-left transition-all ${
-                    form.user_role === role.value
-                      ? "border-primary bg-primary/5 ring-1 ring-primary/20"
-                      : "border-border hover:border-primary/40"
-                  }`}
-                >
-                  <p className="text-sm font-bold text-foreground">{role.label}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{role.shortDesc}</p>
-                  <p className="text-xs text-primary font-medium mt-2 flex items-center gap-1.5">
-                    <BadgeCheck className="h-3.5 w-3.5 shrink-0" />
-                    {role.stepOneHook}
-                  </p>
-                </button>
+            <ul className="space-y-1.5 pt-1">
+              {EMAIL_TRUST_INDICATORS.map((text) => (
+                <li key={text} className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-primary shrink-0" />
+                  {text}
+                </li>
               ))}
-            </div>
+            </ul>
           </div>
         </div>
       );
@@ -353,6 +435,30 @@ export default function CreateProfile() {
             <p className="text-xs text-muted-foreground">{LEGAL_NAME_HELPER}</p>
           </div>
           <div className="space-y-2">
+            <Label>Professional level</Label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {PROFESSIONAL_LEVEL_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() =>
+                    setForm({
+                      ...form,
+                      professional_level: form.professional_level === opt.value ? "" : opt.value,
+                    })
+                  }
+                  className={`px-3 py-2 rounded-xl border text-xs font-semibold transition-colors ${
+                    form.professional_level === opt.value
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border hover:border-primary/30"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-2">
             <Label>Years of experience (optional)</Label>
             <div className="grid grid-cols-2 gap-2">
               {EXPERIENCE_OPTIONS.map((option) => (
@@ -376,9 +482,6 @@ export default function CreateProfile() {
     }
 
     if (step === 3) {
-      const visibleQualifications = showMoreQualifications
-        ? [...TOP_QUALIFICATIONS, ...MORE_QUALIFICATIONS]
-        : TOP_QUALIFICATIONS;
       const visibleServices = showMoreServices
         ? [...TOP_SERVICES, ...MORE_SERVICES]
         : TOP_SERVICES;
@@ -386,58 +489,23 @@ export default function CreateProfile() {
       return (
         <div className="space-y-5">
           <p className="text-sm text-muted-foreground">
-            Select your qualifications and up to <strong>{MAX_PRIMARY_SERVICES} primary services</strong>. You can expand your profile anytime.
+            Tell us your qualification path, then choose up to <strong>3 primary</strong> and{" "}
+            <strong>10 secondary</strong> expertise areas. Primary matches score highest; secondary at lower weight.
           </p>
-          <div className="space-y-3">
-            <Label>Qualifications</Label>
-            <div className="flex flex-wrap gap-2">
-              {visibleQualifications.map((q) => (
-                <Badge
-                  key={q}
-                  variant={form.qualifications.includes(q) ? "default" : "outline"}
-                  className="cursor-pointer text-sm py-1.5 px-3 select-none"
-                  onClick={() => toggleItem("qualifications", q)}
-                >
-                  {q}
-                  {form.qualifications.includes(q) && <X className="h-3 w-3 ml-1.5" />}
-                </Badge>
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowMoreQualifications((v) => !v)}
-              className="text-xs font-semibold text-primary flex items-center gap-1"
-            >
-              {showMoreQualifications ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-              {showMoreQualifications ? "Show fewer qualifications" : "Show more qualifications"}
-            </button>
-          </div>
-          <div className="space-y-3">
-            <Label>
-              Primary services ({form.specialisations.length}/{MAX_PRIMARY_SERVICES})
-            </Label>
-            <div className="flex flex-wrap gap-2">
-              {visibleServices.map((s) => (
-                <Badge
-                  key={s}
-                  variant={form.specialisations.includes(s) ? "default" : "outline"}
-                  className="cursor-pointer text-sm py-1.5 px-3 select-none"
-                  onClick={() => toggleItem("specialisations", s, MAX_PRIMARY_SERVICES)}
-                >
-                  {s}
-                  {form.specialisations.includes(s) && <X className="h-3 w-3 ml-1.5" />}
-                </Badge>
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowMoreServices((v) => !v)}
-              className="text-xs font-semibold text-primary flex items-center gap-1"
-            >
-              {showMoreServices ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-              {showMoreServices ? "Show fewer services" : "Show more services"}
-            </button>
-          </div>
+          <QualificationSection
+            form={form}
+            setForm={setForm}
+            showMoreQualifications={showMoreQualifications}
+            onToggleShowMore={() => setShowMoreQualifications((v) => !v)}
+          />
+          <ExpertisePicker
+            form={form}
+            setForm={setForm}
+            visibleServices={visibleServices}
+            showMoreServices={showMoreServices}
+            onToggleShowMore={() => setShowMoreServices((v) => !v)}
+            onLimitMessage={(msg) => toast.warning(msg)}
+          />
         </div>
       );
     }
@@ -568,13 +636,31 @@ export default function CreateProfile() {
             <p>Role: {savedSignup.role === "professional" ? "Tax professional" : "Client"}</p>
           </div>
           <div className="grid grid-cols-1 gap-3">
-            <Link to="/jobs">
-              <Button className="w-full h-11 rounded-xl font-semibold gap-2">
-                <Briefcase className="h-4 w-4" /> Browse live projects
+            {savedSignup.role === "professional" && (
+              <Link to={advisorUrl({ slug: savedSignup.advisorSlug || "my-profile", id: savedSignup.advisorSlug })}>
+                <Button className="w-full h-11 rounded-xl font-semibold gap-2">
+                  <Users className="h-4 w-4" /> View your adviser profile
+                </Button>
+              </Link>
+            )}
+            <Link to={savedSignup.role === "professional" ? "/jobs" : "/post-job"}>
+              <Button
+                variant={savedSignup.role === "professional" ? "outline" : "default"}
+                className="w-full h-11 rounded-xl font-semibold gap-2"
+              >
+                <Briefcase className="h-4 w-4" />
+                {savedSignup.role === "professional" ? "Browse live projects" : "Post a project"}
               </Button>
             </Link>
+            {savedSignup.role === "professional" && (
+              <Link to="/workspaces">
+                <Button variant="outline" className="w-full h-11 rounded-xl gap-2">
+                  <Briefcase className="h-4 w-4" /> Your workspaces
+                </Button>
+              </Link>
+            )}
             <Link to="/professionals">
-              <Button variant="outline" className="w-full h-11 rounded-xl gap-2">
+              <Button variant="ghost" className="w-full h-11 rounded-xl gap-2">
                 <Users className="h-4 w-4" /> Browse professionals
               </Button>
             </Link>
@@ -584,58 +670,40 @@ export default function CreateProfile() {
     );
   }
 
-  const showActivityOnStep1 = step === 1;
-
   return (
-    <div className="min-h-screen bg-background">
-      <div className="border-b border-border/60 bg-card">
-        <div className="max-w-2xl mx-auto px-4 sm:px-6 py-5 flex items-center justify-between">
-          <Link to="/" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
-            <ArrowLeft className="h-4 w-4" />
-            Back to marketplace
-          </Link>
-          <div className="flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
-            <Zap className="h-3.5 w-3.5" />
-            No password required
-          </div>
-        </div>
-      </div>
-
-      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10">
-        <div className="space-y-4 mb-6">
+    <div className="min-h-screen bg-gradient-to-b from-secondary/30 to-background">
+      <div className="max-w-[560px] mx-auto px-4 sm:px-6 py-10 sm:py-12">
+        <motion.div
+          className="space-y-4 mb-10"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.28 }}
+        >
           <Badge variant="outline" className="w-fit gap-1.5 bg-teal-50 text-teal-700 border-teal-200">
             <ShieldCheck className="h-3.5 w-3.5" />
             UK tax & accounting marketplace
           </Badge>
           {step === 1 ? (
             <>
-              <h1 className="text-3xl font-bold text-foreground tracking-tight">
-                Join a live UK professional marketplace
+              <h1 className="text-3xl sm:text-[2rem] font-bold text-foreground tracking-tight leading-tight">
+                {hero.headline}
               </h1>
-              <p className="text-muted-foreground text-sm leading-relaxed">
-                Connect with real projects and trusted professionals — one step at a time, under two minutes to start.
+              <p className="text-muted-foreground text-base leading-relaxed">
+                {hero.subheadline}
               </p>
-              <div className="flex flex-wrap gap-2">
-                {LOW_FRICTION_REASSURANCE.map((text) => (
-                  <span
-                    key={text}
-                    className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground/80 px-2.5 py-1 rounded-full bg-secondary border border-border"
-                  >
-                    <Clock className="h-3 w-3 text-primary shrink-0" />
-                    {text}
-                  </span>
-                ))}
+              <div className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
+                <Zap className="h-3.5 w-3.5" />
+                No password required
               </div>
-              <OnboardingActivityStrip />
             </>
           ) : (
             <p className="text-sm text-muted-foreground">
               Building your {isProfessional ? "professional" : "client"} profile — you can refine details anytime.
             </p>
           )}
-        </div>
+        </motion.div>
 
-        <div className="rounded-3xl border border-border/70 bg-card p-5 sm:p-7 shadow-sm space-y-6">
+        <div className="rounded-3xl border border-border/70 bg-card p-8 shadow-sm space-y-8">
           <OnboardingProgress steps={steps} currentStep={step} role={form.user_role} />
 
           <form
@@ -645,24 +713,40 @@ export default function CreateProfile() {
               else handleNext();
             }}
           >
-            {renderStepContent()}
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={`step-${step}-${form.user_role}`}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.25 }}
+              >
+                {renderStepContent()}
+              </motion.div>
+            </AnimatePresence>
 
-            <div className="flex flex-col-reverse sm:flex-row gap-3 mt-8 pt-6 border-t border-border/60">
+            <div className={`flex flex-col gap-3 mt-10 pt-8 border-t border-border/60 ${step > 1 ? "sm:flex-row" : ""}`}>
               {step > 1 ? (
-                <Button type="button" variant="outline" onClick={handleBack} className="h-11 rounded-xl flex-1 gap-2">
+                <Button type="button" variant="outline" onClick={handleBack} className="h-12 rounded-xl flex-1 gap-2 transition-transform active:scale-[0.98]">
                   <ArrowLeft className="h-4 w-4" /> Back
                 </Button>
-              ) : (
-                <div className="flex-1 hidden sm:block" />
-              )}
+              ) : null}
               {isLastStep ? (
-                <Button type="submit" disabled={isSubmitting} className="h-11 rounded-xl flex-1 font-semibold gap-2">
+                <Button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="h-12 rounded-xl w-full font-semibold gap-2 transition-all hover:shadow-md active:scale-[0.98]"
+                >
                   {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                   {isProfessional ? "Join marketplace" : "Join marketplace"}
                 </Button>
               ) : (
-                <Button type="submit" className="h-11 rounded-xl flex-1 font-semibold gap-2">
-                  Continue <ArrowRight className="h-4 w-4" />
+                <Button
+                  type="submit"
+                  className="h-12 rounded-xl w-full font-semibold gap-2 transition-all hover:shadow-md active:scale-[0.98]"
+                >
+                  {stepOneCta}
+                  <ArrowRight className="h-4 w-4" />
                 </Button>
               )}
             </div>
@@ -685,15 +769,15 @@ export default function CreateProfile() {
           </form>
         </div>
 
-        {showActivityOnStep1 && (
-          <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Link to="/jobs">
-              <Button variant="outline" className="w-full rounded-xl">Browse projects without joining</Button>
-            </Link>
-            <Link to="/professionals">
-              <Button variant="outline" className="w-full rounded-xl">Browse professionals</Button>
-            </Link>
-          </div>
+        {step === 1 && (
+          <motion.div
+            className="mt-10"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.3, delay: 0.1 }}
+          >
+            <OnboardingTrustSection />
+          </motion.div>
         )}
       </div>
     </div>

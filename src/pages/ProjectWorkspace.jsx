@@ -6,7 +6,8 @@ import { DEMO_JOBS } from "@/lib/demoData";
 import { getPostedProjects, updateProject } from "@/lib/projectStore";
 import { getBidsForProject } from "@/lib/bidStore";
 import { enrichBidIdentity } from "@/lib/professionalIdentity";
-import { getProjectWorkflowBundle } from "@/lib/marketplaceState";
+import { resolveWorkspaceUser } from "@/lib/workspacePageUtils";
+import { useMarketplaceWorkflow } from "@/lib/MarketplaceWorkflowContext";
 import {
   resolveWorkspaceUserRole,
   getSessionProfessionalEmail,
@@ -45,6 +46,7 @@ import { useToast } from "@/components/ui/use-toast";
 export default function ProjectWorkspace() {
   const { projectId } = useParams();
   const navigate = useNavigate();
+  const { refresh } = useMarketplaceWorkflow();
   const { toast } = useToast();
   const filesRef = useRef(null);
   const messagesRef = useRef(null);
@@ -62,66 +64,62 @@ export default function ProjectWorkspace() {
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-      let me = null;
       try {
-        me = await base44.auth.me();
+        const { user: me } = await resolveWorkspaceUser(() => base44.auth.me());
         setUser(me);
-      } catch {
-        setUser(null);
-      }
-
-      let job =
-        DEMO_JOBS.find((j) => j.id === projectId)
-        || getPostedProjects().find((j) => j.id === projectId);
-      if (!job) {
-        try {
-          job = await base44.entities.JobPost.get(projectId);
-        } catch {
-          job = null;
+        if (me?.email) {
+          refresh();
         }
-      }
-      setProject(job);
 
-      const bids = getBidsForProject(projectId);
-      let accepted = bids.find((b) => b.status === "accepted" || b.awarded);
-      if (!accepted && job?.awarded_bid_id) {
-        accepted = bids.find((b) => b.id === job.awarded_bid_id);
-      }
-      if (!accepted && projectId === "demo-project-selected") {
-        accepted = {
-          id: "demo-selected",
-          project_id: projectId,
-          project_title: job?.title || "HMRC Enquiry Support — Director",
-          status: "accepted",
-          awarded: true,
-          bidder_email: getSessionProfessionalEmail() || "demo-professional@taxprouk.local",
-        };
-      }
-
-      const bundle = getProjectWorkflowBundle(projectId);
-      if (!accepted && bundle.winningBid) {
-        accepted = bundle.winningBid;
-      }
-      if (!job && bundle.project) {
-        job = bundle.project;
+        let job =
+          DEMO_JOBS.find((j) => j.id === projectId)
+          || getPostedProjects().find((j) => j.id === projectId);
+        if (!job) {
+          try {
+            job = await base44.entities.JobPost.get(projectId);
+          } catch {
+            job = null;
+          }
+        }
         setProject(job);
-      }
 
-      let ws = bundle.workspace || getWorkspaceByProjectId(projectId);
-      if (ws) {
-        const enrichedAccepted = accepted ? enrichBidIdentity(accepted) : null;
-        const role = resolveWorkspaceUserRole({
-          workspace: ws,
-          project: job,
-          user: me,
-          winningBid: enrichedAccepted,
-        });
-        setUserRole(role);
-      } else {
+        const bids = getBidsForProject(projectId);
+        let accepted = bids.find((b) => b.status === "accepted" || b.awarded);
+        if (!accepted && job?.awarded_bid_id) {
+          accepted = bids.find((b) => b.id === job.awarded_bid_id);
+        }
+        if (!accepted && projectId === "demo-project-selected") {
+          accepted = {
+            id: "demo-selected",
+            project_id: projectId,
+            project_title: job?.title || "HMRC Enquiry Support — Director",
+            status: "accepted",
+            awarded: true,
+            bidder_email: getSessionProfessionalEmail() || "demo-professional@taxprouk.local",
+          };
+        }
+
+        const ws = getWorkspaceByProjectId(projectId);
+        if (ws) {
+          const enrichedAccepted = accepted ? enrichBidIdentity(accepted) : null;
+          const role = resolveWorkspaceUserRole({
+            workspace: ws,
+            project: job,
+            user: me,
+            winningBid: enrichedAccepted,
+          });
+          setUserRole(role);
+        } else {
+          setUserRole(null);
+        }
+        setWorkspace(ws);
+      } catch (err) {
+        console.warn("[ProjectWorkspace] load failed", err);
+        setWorkspace(getWorkspaceByProjectId(projectId));
         setUserRole(null);
+      } finally {
+        setLoading(false);
       }
-      setWorkspace(ws);
-      setLoading(false);
     };
 
     load();

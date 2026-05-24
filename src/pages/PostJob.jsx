@@ -1,5 +1,5 @@
-import React, { useRef, useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import React, { useRef, useState, useEffect, useMemo } from "react";
+import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -13,6 +13,9 @@ import { base44 } from "@/api/base44Client";
 import { saveProject } from "@/lib/projectStore";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
+import InvitedAdvisorBanner from "@/components/shared/InvitedAdvisorBanner";
+import { peekAdvisorProfile, resolveAdvisorProfile } from "@/lib/advisorProfiles";
+import { syncMarketplaceAfterProjectPost } from "@/lib/marketplaceIntegrations";
 
 const SERVICE_TYPES = [
   { value: "self_assessment", label: "Self Assessment", icon: "📄" },
@@ -325,6 +328,12 @@ function SelectCard({ item, selected, onClick }) {
 
 export default function PostJob() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const advisorParam = searchParams.get("advisor") || "";
+  const inviteMode = searchParams.get("invite") === "1";
+  const [invitedAdvisor, setInvitedAdvisor] = useState(() =>
+    advisorParam ? peekAdvisorProfile(advisorParam) : null,
+  );
   const [step, setStep] = useState(0);
   const [generating, setGenerating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -340,6 +349,22 @@ export default function PostJob() {
   const [published, setPublished] = useState(false);
   const [publishedTitle, setPublishedTitle] = useState("");
   const generationRef = useRef(0);
+
+  useEffect(() => {
+    if (!advisorParam) return;
+    let cancelled = false;
+    resolveAdvisorProfile(advisorParam).then(({ profile }) => {
+      if (!cancelled) setInvitedAdvisor(profile);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [advisorParam]);
+
+  const advisorPrefillNote = useMemo(() => {
+    if (!invitedAdvisor?.full_name) return "";
+    return `Client invited ${invitedAdvisor.full_name} to quote on this project via TaxLink.`;
+  }, [invitedAdvisor?.full_name]);
 
   const recordsReady = /ready|yes|have|prepared|all set/i.test(answers.records);
   const combinedAnswers = `${answers.what} ${answers.records} ${answers.complications}`.toLowerCase();
@@ -569,6 +594,13 @@ Write a fresh, publication-ready brief now.`;
       duration: "one_off",
       required_qualifications: [],
       _user_posted: true,
+      ...(invitedAdvisor
+        ? {
+            invited_advisor_id: invitedAdvisor.id,
+            invited_advisor_slug: invitedAdvisor.slug,
+            invited_advisor_name: invitedAdvisor.full_name,
+          }
+        : {}),
     };
   };
 
@@ -597,7 +629,7 @@ Write a fresh, publication-ready brief now.`;
 
     try {
       const project = await base44.entities.JobPost.create(payload);
-      saveProject({
+      const saved = saveProject({
         ...payload,
         ...project,
         _user_posted: true,
@@ -605,9 +637,14 @@ Write a fresh, publication-ready brief now.`;
         accepting_bids: true,
         openForBids: true,
       });
+      syncMarketplaceAfterProjectPost(saved || project);
       setPublishedTitle(projectTitle);
       setPublished(true);
-      toast.success("Project published — now visible in Browse Projects.");
+      toast.success(
+        invitedAdvisor
+          ? `Project published — ${invitedAdvisor.full_name?.split(" ")[0] || "your adviser"} can be invited to quote.`
+          : "Project published — now visible in Browse Projects.",
+      );
     } catch {
       const localProject = {
         id: `posted-${Date.now()}`,
@@ -615,7 +652,8 @@ Write a fresh, publication-ready brief now.`;
         budget_type: "fixed",
         created_date: new Date().toISOString(),
       };
-      saveProject(localProject);
+      const saved = saveProject(localProject);
+      syncMarketplaceAfterProjectPost(saved || localProject);
       setPublishedTitle(projectTitle);
       setPublished(true);
       toast.success("Project published — now visible in Browse Projects.");
@@ -697,6 +735,8 @@ Write a fresh, publication-ready brief now.`;
       <Link to="/" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-8">
         <ArrowLeft className="h-4 w-4" /> Back
       </Link>
+
+      <InvitedAdvisorBanner advisor={invitedAdvisor} inviteMode={inviteMode} />
 
       <div className="mb-8">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-violet-100 text-violet-700 text-xs font-bold mb-3">

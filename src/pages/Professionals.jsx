@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { DEMO_PROFESSIONALS } from "@/lib/demoData";
+import { EXTENDED_DEMO_ADVISORS, advisorUrl } from "@/lib/advisorProfiles";
 import { base44 } from "@/api/base44Client";
 import {
   CLIENT_NEED_OPTIONS,
@@ -37,6 +38,9 @@ import {
   partitionRecommended,
   discoveryFitScore,
 } from "@/lib/professionalDiscovery";
+import { normalizeExpertise } from "@/lib/expertiseMatching";
+import ProfessionalQualificationLines from "@/components/shared/ProfessionalQualificationLines";
+import ProfessionalExpertiseDisplay from "@/components/shared/ProfessionalExpertiseDisplay";
 
 const QUALIFICATIONS = ["ACA", "ACCA", "CTA", "ATT", "AAT", "CIMA"];
 const SPECIALISATIONS = [
@@ -215,8 +219,6 @@ function DiscoveryCard({
   const engage = getTypicalEngagementLabel(profile);
   const reasonsMax = isLarge ? 3 : 2;
   const reasons = oftenSelectedFor(profile, activeNeed, reasonsMax);
-  const qualLine = (profile.qualifications || []).slice(0, 4).join(" · ");
-
   const trackProfile = () => {
     base44.analytics.track({ eventName: "profile_open", properties: { professional: profile.full_name } });
   };
@@ -263,9 +265,8 @@ function DiscoveryCard({
             <p className="text-xs text-foreground/85 leading-relaxed line-clamp-2">{story}</p>
           )}
 
-          {qualLine && (
-            <p className="text-[11px] font-medium text-muted-foreground tracking-wide">{qualLine}</p>
-          )}
+          <ProfessionalQualificationLines profile={profile} className="text-[11px]" />
+          <ProfessionalExpertiseDisplay profile={profile} compact />
 
           <p className="text-xs text-muted-foreground leading-relaxed">{trustLine}</p>
 
@@ -293,15 +294,15 @@ function DiscoveryCard({
 
           <div className="flex flex-wrap gap-2 pt-2">
             <Button asChild size="sm" className={`rounded-xl gap-1.5 ${isLarge ? "h-10 px-4" : "h-9"}`}>
-              <Link to={`/professionals/${profile.slug || profile.id}`} onClick={trackProfile}>
+              <Link to={advisorUrl(profile)} onClick={trackProfile}>
                 View Adviser <ArrowRight className="h-3.5 w-3.5" />
               </Link>
             </Button>
             <Button asChild size="sm" variant="outline" className="rounded-xl gap-1.5">
-              <Link to="/post-job">Discuss Project</Link>
+              <Link to={`/post-job?advisor=${encodeURIComponent(profile.slug || profile.id)}`}>Discuss Project</Link>
             </Button>
             <Button asChild size="sm" variant="ghost" className="rounded-xl gap-1.5 text-muted-foreground">
-              <Link to="/post-job">
+              <Link to={`/post-job?advisor=${encodeURIComponent(profile.slug || profile.id)}`}>
                 <MessageCircle className="h-3.5 w-3.5" />
                 Request Consultation
               </Link>
@@ -346,13 +347,15 @@ export default function Professionals() {
     ...p,
     slug: p.id,
     qualifications: p.qualifications || [],
-    specialisations: p.specialisations || [],
+    specialisations: p.specialisations || p.primary_expertise || [],
+    primary_expertise: p.primary_expertise || p.specialisations || [],
+    secondary_expertise: p.secondary_expertise || [],
     software_expertise: p.software_expertise || [],
     completed_jobs: p.completed_jobs || 0,
     availability: p.availability || "available",
     remote_work: p.remote_work !== false,
   }));
-  const allProfessionals = [...uniqueReal, ...DEMO_PROFESSIONALS];
+  const allProfessionals = [...uniqueReal, ...DEMO_PROFESSIONALS, ...EXTENDED_DEMO_ADVISORS];
 
   const band = RATE_BANDS[rateBand];
   const exp = EXP_LEVELS[expLevel];
@@ -365,7 +368,7 @@ export default function Professionals() {
         p.full_name.toLowerCase().includes(q) ||
         (p.title || "").toLowerCase().includes(q) ||
         (p.location || "").toLowerCase().includes(q) ||
-        (p.specialisations || []).some((s) => s.toLowerCase().includes(q)) ||
+        normalizeExpertise(p).all.some((s) => s.toLowerCase().includes(q)) ||
         (p.qualifications || []).some((x) => x.toLowerCase().includes(q)) ||
         (p.bio || "").toLowerCase().includes(q);
       if (!hit) return false;
@@ -374,7 +377,7 @@ export default function Professionals() {
     if (activeNeed && discoveryFitScore(p, activeNeed, "") < 14) return false;
 
     if (availability !== "all" && p.availability !== availability) return false;
-    if (selectedSpec && !p.specialisations?.includes(selectedSpec)) return false;
+    if (selectedSpec && !normalizeExpertise(p).all.includes(selectedSpec)) return false;
     if (selectedQual && !p.qualifications?.includes(selectedQual)) return false;
     if (selectedLocation && p.location !== selectedLocation) return false;
     if (remoteOnly && !p.remote_work) return false;

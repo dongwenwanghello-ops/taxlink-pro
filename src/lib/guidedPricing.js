@@ -3,6 +3,7 @@
  */
 import { computeFairMarketRange } from "@/lib/marketplaceIntelligence";
 import { getMarketBudgetGuidance } from "@/lib/projectBiddingUX";
+import { scoreProfessionalMatch } from "@/lib/expertiseMatching";
 
 const COMPLEXITY_LEVELS = {
   basic: {
@@ -199,8 +200,20 @@ export function scoreBidForClientReview(bid = {}) {
   const headline = bid.bidder_headline || bid.professional_credentials?.headline;
   if (headline) score += 8;
 
-  const specialisms = bid.bidder_specialisms || bid.professional_credentials?.specialisations || [];
-  score += Math.min(specialisms.length, 3) * 6;
+  const { score: expertiseScore } = scoreProfessionalMatch(
+    {
+      bidder_primary_specialisms: bid.bidder_primary_specialisms,
+      bidder_secondary_specialisms: bid.bidder_secondary_specialisms,
+      specialisations: bid.bidder_specialisms,
+      professional_credentials: bid.professional_credentials,
+      qualification_status: bid.professional_credentials?.qualification_status,
+      professional_level: bid.professional_credentials?.professional_level,
+      years_experience_numeric: bid.professional_credentials?.years_experience_numeric,
+      years_experience: bid.years_experience,
+    },
+    { category: bid.project_category, title: bid.project_title },
+  );
+  score += Math.min(expertiseScore * 12, 36);
 
   return Math.round(score);
 }

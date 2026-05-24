@@ -14,6 +14,7 @@ import TrustBadges, { computeBadges } from "../components/shared/TrustBadges";
 import { formatDistanceToNow } from "date-fns";
 import { motion } from "framer-motion";
 import { DEMO_PROFESSIONALS, DEMO_REVIEWS } from "@/lib/demoData";
+import { advisorUrl } from "@/lib/advisorProfiles";
 import { base44 } from "@/api/base44Client";
 
 function seeded(id = "", offset = 0) {
@@ -245,7 +246,7 @@ export default function ProfileDetail() {
               const initials = p.full_name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
               const grad = avatarColor(p.full_name);
               return (
-                <Link key={p.id} to={`/professionals/${p.slug}`}
+                <Link key={p.id} to={advisorUrl(p)}
                   className="flex flex-col items-center p-4 bg-card border border-border/60 rounded-2xl hover:border-primary/40 hover:shadow-md transition-all">
                   <div className={`h-12 w-12 rounded-xl bg-gradient-to-br ${grad} flex items-center justify-center text-white font-bold text-sm mb-2`}>{initials}</div>
                   <p className="text-sm font-semibold text-foreground text-center">{p.full_name}</p>
