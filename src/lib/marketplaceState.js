@@ -21,6 +21,8 @@ import {
   persistWorkspaceAccessGrant,
   resolveWorkspaceUserRole,
   workspaceIncludesEmail,
+  collectWorkspaceIdentityEmails,
+  setSessionProfessionalEmail,
 } from "@/lib/workspaceAccess";
 import { enrichBidIdentity } from "@/lib/professionalIdentity";
 
@@ -78,6 +80,14 @@ function writeSchemaVersion() {
   localStorage.setItem(STORAGE_KEYS.schemaVersion, String(WORKFLOW_SCHEMA_VERSION));
 }
 
+function readTaxLinkAuthEmail() {
+  try {
+    return JSON.parse(localStorage.getItem("taxlink_auth_session") || "null")?.user?.email || "";
+  } catch {
+    return "";
+  }
+}
+
 /** Session identity used for permissions and workspace listing (consistent across pages). */
 export function getMarketplaceSession() {
   let profileEmail = "";
@@ -86,10 +96,13 @@ export function getMarketplaceSession() {
     if (raw) profileEmail = JSON.parse(raw)?.email || "";
   } catch { /* ignore */ }
 
+  const authEmail = readTaxLinkAuthEmail();
   const professionalEmail = getSessionProfessionalEmail();
   const clientEmail = (localStorage.getItem(STORAGE_KEYS.sessionClientEmail) || profileEmail || "")
     .toLowerCase()
     .trim();
+  const normalizedAuth = String(authEmail || "").toLowerCase().trim();
+  const normalizedProfile = (profileEmail || "").toLowerCase().trim();
 
   const role = localStorage.getItem(STORAGE_KEYS.userRole) || "professional";
 
@@ -97,16 +110,32 @@ export function getMarketplaceSession() {
     role,
     professionalEmail,
     clientEmail,
-    profileEmail: (profileEmail || "").toLowerCase().trim(),
+    authEmail: normalizedAuth,
+    profileEmail: normalizedProfile,
     email: role === "client"
-      ? clientEmail
-      : (professionalEmail || profileEmail || "").toLowerCase().trim(),
+      ? (clientEmail || normalizedAuth || normalizedProfile)
+      : (professionalEmail || normalizedAuth || normalizedProfile),
   };
 }
 
 export function setMarketplaceClientEmail(email) {
   if (!email) return;
   localStorage.setItem(STORAGE_KEYS.sessionClientEmail, String(email).toLowerCase().trim());
+}
+
+/** Keep marketplace session keys aligned with TaxLink auth (role-aware). */
+export function syncSessionIdentityFromUser(user) {
+  if (!user?.email) return;
+  const email = String(user.email).toLowerCase().trim();
+  const role = user.role || localStorage.getItem(STORAGE_KEYS.userRole) || "professional";
+  if (role === "client") {
+    setMarketplaceClientEmail(email);
+  } else {
+    setSessionProfessionalEmail(email);
+  }
+  if (user.role) {
+    localStorage.setItem(STORAGE_KEYS.userRole, user.role);
+  }
 }
 
 export function getEnvironmentLabel() {
@@ -361,20 +390,49 @@ export function buildWorkflowSnapshot() {
   };
 }
 
+function workspaceMatchesIdentity(ws, norm, role) {
+  if (!norm || !workspaceIncludesEmail(ws, norm)) return false;
+  if (role === "client") return getUserRoleInWorkspace(ws, norm) === "client";
+  if (role === "professional") return getUserRoleInWorkspace(ws, norm) === "professional";
+  return true;
+}
+
+function workspaceProfessionalFieldsMatch(ws, identities) {
+  const proEmails = [
+    ws.professional_email,
+    ws.selected_professional_email,
+  ]
+    .map((e) => String(e || "").toLowerCase().trim())
+    .filter(Boolean);
+  return identities.some((id) => proEmails.includes(id));
+}
+
+function resolveEffectiveRole(role) {
+  try {
+    const authRole = JSON.parse(localStorage.getItem("taxlink_auth_session") || "null")?.user?.role;
+    if (authRole) return String(authRole).toLowerCase().trim();
+  } catch {
+    /* ignore */
+  }
+  return String(role || localStorage.getItem(STORAGE_KEYS.userRole) || "professional")
+    .toLowerCase()
+    .trim();
+}
+
 /** List workspaces visible to user after reconcile (use snapshot in UI when possible). */
 export function getAccessibleWorkspacesForUser({ email, role } = {}) {
-  const sessionEmail = getSessionProfessionalEmail();
-  const normalized = (email || sessionEmail || "").toLowerCase().trim();
+  const identities = collectWorkspaceIdentityEmails({ email });
+  const effectiveRole = resolveEffectiveRole(role);
 
   const selectedBids = getAllBids().filter((b) => {
     if (normalizeBidStatus(b.status, b) !== BID_STATUSES.selected) return false;
-    if (!normalized) return true;
+    if (!identities.length) return true;
     const proEmail = resolveProfessionalEmail(b);
-    return !proEmail || proEmail === normalized || proEmail === sessionEmail;
+    return !proEmail || identities.includes(proEmail);
   });
 
   const demoSelected =
-    role === "professional"
+    effectiveRole === "professional"
       ? DEMO_BID_TEMPLATES.filter((b) => normalizeBidStatus(b.status, b) === BID_STATUSES.selected)
       : [];
 
@@ -382,14 +440,22 @@ export function getAccessibleWorkspacesForUser({ email, role } = {}) {
     [...selectedBids, ...demoSelected].map((b) => b.project_id).filter(Boolean),
   );
 
-  return getAllWorkspaces().filter((ws) => {
-    if (normalized && workspaceIncludesEmail(ws, normalized)) {
-      if (role === "client") return getUserRoleInWorkspace(ws, normalized) === "client";
-      if (role === "professional") return getUserRoleInWorkspace(ws, normalized) === "professional";
+  const all = getAllWorkspaces();
+
+  if (effectiveRole === "professional" && identities.length) {
+    const byProfessionalEmail = all.filter((ws) => workspaceProfessionalFieldsMatch(ws, identities));
+    if (byProfessionalEmail.length) return byProfessionalEmail;
+  }
+
+  return all.filter((ws) => {
+    for (const norm of identities) {
+      if (workspaceMatchesIdentity(ws, norm, effectiveRole)) return true;
+    }
+    if (effectiveRole === "professional" && workspaceProfessionalFieldsMatch(ws, identities)) {
       return true;
     }
     if (linkedProjectIds.has(ws.project_id)) return true;
-    if (role === "professional" && String(ws.project_id || "").startsWith("demo-project-")) {
+    if (effectiveRole === "professional" && String(ws.project_id || "").startsWith("demo-project-")) {
       return true;
     }
     return false;

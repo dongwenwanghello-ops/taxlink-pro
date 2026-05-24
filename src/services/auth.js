@@ -1,7 +1,7 @@
 /**
  * TaxLink platform auth — local session only (no external redirects).
  */
-import { setMarketplaceClientEmail } from "@/lib/marketplaceState";
+import { syncSessionIdentityFromUser } from "@/lib/marketplaceState";
 
 const SESSION_KEY = "taxlink_auth_session";
 const CLOUD_SESSION_KEY = "taxlink_cloud_session";
@@ -50,9 +50,7 @@ function writeSession(user) {
   };
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
   localStorage.setItem(CLOUD_SESSION_KEY, "active");
-  if (user?.email) {
-    setMarketplaceClientEmail(user.email);
-  }
+  syncSessionIdentityFromUser(user);
   window.dispatchEvent(new CustomEvent("taxlink-auth-changed", { detail: user }));
   return user;
 }
@@ -130,7 +128,7 @@ export async function restoreSession() {
   clearLegacyVendorStorage();
   const existing = readSession()?.user;
   if (existing?.email) {
-    setMarketplaceClientEmail(existing.email);
+    syncSessionIdentityFromUser(existing);
     logAuthDebug({ source: "session" });
     return { user: existing, authenticated: true };
   }

@@ -95,11 +95,23 @@ export function getWorkspaceByProjectId(projectId) {
 
 export function getWorkspacesForUser({ email, role } = {}) {
   if (!email) return [];
-  const normalized = email.toLowerCase();
+  const normalized = String(email).toLowerCase().trim();
+  const effectiveRole = String(role || "professional").toLowerCase().trim();
   return readAll().filter((ws) => {
+    const proEmails = [
+      ws.professional_email,
+      ws.selected_professional_email,
+    ]
+      .map((e) => String(e || "").toLowerCase().trim())
+      .filter(Boolean);
+    if (effectiveRole === "professional" && proEmails.includes(normalized)) {
+      return true;
+    }
     if (!workspaceIncludesEmail(ws, normalized)) return false;
-    if (role === "client") return getUserRoleInWorkspace(ws, normalized) === "client";
-    if (role === "professional") return getUserRoleInWorkspace(ws, normalized) === "professional";
+    if (effectiveRole === "client") return getUserRoleInWorkspace(ws, normalized) === "client";
+    if (effectiveRole === "professional") {
+      return getUserRoleInWorkspace(ws, normalized) === "professional";
+    }
     return true;
   });
 }
@@ -107,7 +119,9 @@ export function getWorkspacesForUser({ email, role } = {}) {
 export function getUserRoleInWorkspace(workspace, userEmail) {
   if (!workspace || !userEmail) return null;
   const email = userEmail.toLowerCase();
-  const member = (workspace.members || []).find((m) => m.email === email);
+  const member = (workspace.members || []).find(
+    (m) => String(m.email || "").toLowerCase().trim() === email,
+  );
   if (member) return member.role;
   if (workspace.client_email?.toLowerCase() === email) return "client";
   if (
@@ -117,8 +131,10 @@ export function getUserRoleInWorkspace(workspace, userEmail) {
     return "professional";
   }
   const grant = getWorkspaceAccessGrant(workspace.project_id);
-  if (grant?.client_email === email) return "client";
-  if (grant?.professional_email === email) return "professional";
+  if (String(grant?.client_email || "").toLowerCase().trim() === email) return "client";
+  if (String(grant?.professional_email || "").toLowerCase().trim() === email) {
+    return "professional";
+  }
   return null;
 }
 

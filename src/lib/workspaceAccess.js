@@ -21,6 +21,7 @@ function isWinningBid(bid) {
 }
 
 export const SESSION_PRO_EMAIL_KEY = "taxprouk_professional_email";
+const CLIENT_SESSION_EMAIL_KEY = "taxprouk_client_email";
 
 export function getSessionProfessionalEmail() {
   return (localStorage.getItem(SESSION_PRO_EMAIL_KEY) || "").toLowerCase().trim();
@@ -88,22 +89,50 @@ export function buildWorkspaceMemberPatch({ clientEmail, bid } = {}) {
   };
 }
 
+function normalizeEmail(email) {
+  return String(email || "").toLowerCase().trim();
+}
+
 export function isEmailWorkspaceMember(workspace, email) {
   if (!workspace || !email) return null;
-  const norm = email.toLowerCase().trim();
+  const norm = normalizeEmail(email);
 
-  const member = (workspace.members || []).find((m) => m.email === norm);
+  const member = (workspace.members || []).find(
+    (m) => normalizeEmail(m.email) === norm,
+  );
   if (member) return member.role;
 
-  if (workspace.client_email?.toLowerCase() === norm) return "client";
-  if (workspace.professional_email?.toLowerCase() === norm) return "professional";
-  if (workspace.selected_professional_email?.toLowerCase() === norm) return "professional";
+  if (normalizeEmail(workspace.client_email) === norm) return "client";
+  if (normalizeEmail(workspace.professional_email) === norm) return "professional";
+  if (normalizeEmail(workspace.selected_professional_email) === norm) return "professional";
 
   const grant = getWorkspaceAccessGrant(workspace.project_id);
-  if (grant?.client_email === norm) return "client";
-  if (grant?.professional_email === norm) return "professional";
+  if (normalizeEmail(grant?.client_email) === norm) return "client";
+  if (normalizeEmail(grant?.professional_email) === norm) return "professional";
 
   return null;
+}
+
+/** All emails that may identify the current user for workspace list filtering. */
+export function collectWorkspaceIdentityEmails({ email } = {}) {
+  const emails = new Set();
+  const add = (value) => {
+    const norm = normalizeEmail(value);
+    if (norm) emails.add(norm);
+  };
+
+  add(email);
+  add(getSessionProfessionalEmail());
+  add(localStorage.getItem(CLIENT_SESSION_EMAIL_KEY));
+
+  try {
+    add(JSON.parse(localStorage.getItem("taxlink_auth_session") || "null")?.user?.email);
+    add(JSON.parse(localStorage.getItem("my_profile") || "null")?.email);
+  } catch {
+    /* ignore */
+  }
+
+  return [...emails];
 }
 
 export function collectCandidateEmails(user, project, winningBid) {
@@ -125,8 +154,6 @@ export function collectCandidateEmails(user, project, winningBid) {
 
   return [...emails].filter(Boolean);
 }
-
-const CLIENT_SESSION_EMAIL_KEY = "taxprouk_client_email";
 
 /** True when workspace is missing client/professional owner fields or member rows. */
 export function isWorkspaceOwnershipIncomplete(workspace) {

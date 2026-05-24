@@ -5,7 +5,11 @@ import {
 } from "lucide-react";
 import { auth } from "@/config/providers";
 import { summarizeWorkspaceCard } from "@/lib/awardWorkflow";
-import { getMarketplaceSession, setMarketplaceClientEmail, WORKFLOW_EVENTS } from "@/lib/marketplaceState";
+import {
+  getMarketplaceSession,
+  syncSessionIdentityFromUser,
+  WORKFLOW_EVENTS,
+} from "@/lib/marketplaceState";
 import { useMarketplaceWorkflow } from "@/lib/MarketplaceWorkflowContext";
 import {
   resolveWorkspaceUser,
@@ -43,12 +47,17 @@ export default function Workspaces() {
     setAcceptedBids(loadAcceptedBidsForSession(session));
   }, []);
 
-  /** Snapshot is primary — always apply, including empty arrays (clears stale UI). */
+  /** Snapshot is primary when non-empty; never let an empty snapshot hide local workspaces. */
   useEffect(() => {
     if (!authChecked || syncingRef.current || authRequired) return;
 
-    const fromSnapshot = snapshot?.accessibleWorkspaces ?? [];
-    setWorkspaces(fromSnapshot);
+    const session = getMarketplaceSession();
+    const list = resolveWorkspaceListPriority({
+      snapshot,
+      session,
+      authRequired: false,
+    });
+    setWorkspaces(list);
   }, [authChecked, authRequired, snapshot, snapshot?.accessibleWorkspaces, snapshot?.counts?.workspaces]);
 
   /** Initial auth + reconcile; expired sessions keep local fallback visible. */
@@ -63,7 +72,7 @@ export default function Workspaces() {
       const hasLocalData = hasLocalWorkspaceOrSessionData(session);
 
       if (user?.email) {
-        setMarketplaceClientEmail(user.email);
+        syncSessionIdentityFromUser(user);
         setAuthRequired(false);
         setLocalOnlyMode(false);
         auth.logAuthDebug({ authenticated: true, email: user.email });
@@ -77,7 +86,7 @@ export default function Workspaces() {
           const restored = await auth.login();
           if (restored?.email) {
             user = restored;
-            setMarketplaceClientEmail(restored.email);
+            syncSessionIdentityFromUser(restored);
           }
         } catch {
           /* keep marketplace session */
@@ -118,7 +127,10 @@ export default function Workspaces() {
       if (syncingRef.current || authRequired) return;
       const snap = event?.detail?.snapshot;
       if (snap) {
-        setWorkspaces(snap.accessibleWorkspaces ?? []);
+        const session = getMarketplaceSession();
+        setWorkspaces(
+          resolveWorkspaceListPriority({ snapshot: snap, session, authRequired: false }),
+        );
       }
     };
 
@@ -148,7 +160,7 @@ export default function Workspaces() {
   }, [refresh, applyWorkspaceList, authRequired]);
 
   const applyAuthenticated = (user) => {
-    setMarketplaceClientEmail(user.email);
+    syncSessionIdentityFromUser(user);
     setAuthRequired(false);
     setLocalOnlyMode(false);
     const session = getMarketplaceSession();

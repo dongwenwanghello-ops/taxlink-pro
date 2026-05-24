@@ -48,9 +48,13 @@ export function hasStoredLocalWorkspaceData(session = null) {
   if (!all.length) return false;
 
   const s = session || getMarketplaceSession();
-  const email = s.email || s.clientEmail || s.professionalEmail || s.profileEmail;
+  const email =
+    s.email || s.authEmail || s.professionalEmail || s.clientEmail || s.profileEmail;
   if (email) {
-    const accessible = getAccessibleWorkspacesForUser({ email, role: s.role });
+    const accessible = getAccessibleWorkspacesForUser({
+      email,
+      role: s.role,
+    });
     if (accessible.length) return true;
   }
 
@@ -87,10 +91,23 @@ export async function resolveWorkspaceUser() {
  * Priority: reconciled snapshot → local fallback (never invert).
  * When session expired, keep local workspaces visible on this device.
  */
+function resolveSessionEmail(session) {
+  const s = session || getMarketplaceSession();
+  return (
+    s.email
+    || s.authEmail
+    || s.professionalEmail
+    || s.clientEmail
+    || s.profileEmail
+    || ""
+  );
+}
+
 export function resolveWorkspaceListPriority({ snapshot, session, authRequired }) {
+  const currentUser = session || getMarketplaceSession();
   const localFallback = getAccessibleWorkspacesForUser({
-    email: session?.email,
-    role: session?.role,
+    email: resolveSessionEmail(currentUser),
+    role: currentUser?.role,
   });
 
   if (authRequired) {
@@ -98,7 +115,8 @@ export function resolveWorkspaceListPriority({ snapshot, session, authRequired }
   }
 
   if (snapshot != null) {
-    return snapshot.accessibleWorkspaces ?? [];
+    const fromSnapshot = snapshot.accessibleWorkspaces ?? [];
+    return fromSnapshot.length ? fromSnapshot : localFallback;
   }
 
   return localFallback;
@@ -109,8 +127,11 @@ export function hasWorkspaceForAcceptedBid(acceptedBids) {
 }
 
 export function loadAcceptedBidsForSession(session) {
-  if (session?.role === "professional" && session?.email) {
-    return getAcceptedBidsForUser(session.email);
+  const s = session || getMarketplaceSession();
+  const email = resolveSessionEmail(s);
+  const role = String(s.role || "professional").toLowerCase().trim();
+  if (role === "professional" && email) {
+    return getAcceptedBidsForUser(email);
   }
   return [];
 }
