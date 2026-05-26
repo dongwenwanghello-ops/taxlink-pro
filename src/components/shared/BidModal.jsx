@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { base44 } from "@/api/base44Client";
 import { saveBid } from "@/lib/bidStore";
 import { setSessionProfessionalEmail } from "@/lib/workspaceAccess";
+import { GA4_CONVERSION_EVENTS, trackConversion } from "@/lib/analytics";
 import BidIntelligence from "@/components/shared/BidIntelligence";
 import { DemoBadge } from "@/lib/demoModeDetector.jsx";
 import { useBiddingCountdown } from "@/hooks/useBiddingCountdown";
@@ -392,6 +393,12 @@ export default function BidModal({ job, onClose, onBidSubmitted, onSubmitSuccess
       }
       setSavedBid(bid);
       console.debug("[BidModal] bid submitted successfully", bid);
+      trackConversion(GA4_CONVERSION_EVENTS.BID_SUBMIT, {
+        project_id: job.id,
+        bid_id: bid?.id,
+        amount: Number(amount),
+        timeline,
+      });
       setStep("success");
       if (onBidSubmitted) onBidSubmitted(bid);
 

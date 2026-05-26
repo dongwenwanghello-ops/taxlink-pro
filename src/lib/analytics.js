@@ -1,14 +1,62 @@
 /**
  * GA4 Analytics helper
  * Measurement ID: G-MNL3G8D1D1
+ *
+ * Conversion events (mark each as a conversion in GA4 Admin → Events):
+ * sign_up_success, profile_publish, job_post_success, bid_submit,
+ * workspace_created, message_sent, onboarding_complete
  */
 
 const MEASUREMENT_ID = "G-MNL3G8D1D1";
+
+/** GA4 conversion event names — register in GA4 Admin → Data display → Events → Mark as conversion */
+export const GA4_CONVERSION_EVENTS = {
+  SIGN_UP_SUCCESS: "sign_up_success",
+  PROFILE_PUBLISH: "profile_publish",
+  JOB_POST_SUCCESS: "job_post_success",
+  BID_SUBMIT: "bid_submit",
+  WORKSPACE_CREATED: "workspace_created",
+  MESSAGE_SENT: "message_sent",
+  ONBOARDING_COMPLETE: "onboarding_complete",
+};
+
+const CONVERSION_EVENT_NAMES = new Set(Object.values(GA4_CONVERSION_EVENTS));
 
 function gtag(...args) {
   if (typeof window === "undefined") return;
   window.dataLayer = window.dataLayer || [];
   window.dataLayer.push(args);
+}
+
+/**
+ * Fire a GA4 conversion event (custom event name = conversion key in GA4).
+ */
+export function trackConversion(eventName, params = {}) {
+  if (typeof window === "undefined") return;
+  if (!CONVERSION_EVENT_NAMES.has(eventName)) {
+    console.warn("[analytics] Unknown conversion event:", eventName);
+    return;
+  }
+  gtag("event", eventName, {
+    event_category: "conversion",
+    is_conversion_event: true,
+    device_type: getDeviceType(),
+    page_path: window.location.pathname,
+    ...params,
+  });
+}
+
+/** Fire a conversion at most once per browser session for the given dedupe key. */
+export function trackConversionOnce(eventName, dedupeKey, params = {}) {
+  if (typeof window === "undefined" || !dedupeKey) return;
+  const storageKey = `ga4_conv_${dedupeKey}`;
+  try {
+    if (sessionStorage.getItem(storageKey)) return;
+    trackConversion(eventName, params);
+    sessionStorage.setItem(storageKey, "1");
+  } catch {
+    trackConversion(eventName, params);
+  }
 }
 
 // ── Device helper ─────────────────────────────────────────────

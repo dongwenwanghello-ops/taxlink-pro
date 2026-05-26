@@ -16,6 +16,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import InvitedAdvisorBanner from "@/components/shared/InvitedAdvisorBanner";
 import { peekAdvisorProfile, resolveAdvisorProfile } from "@/lib/advisorProfiles";
 import { syncMarketplaceAfterProjectPost } from "@/lib/marketplaceIntegrations";
+import { GA4_CONVERSION_EVENTS, trackConversion } from "@/lib/analytics";
 
 const SERVICE_TYPES = [
   { value: "self_assessment", label: "Self Assessment", icon: "📄" },
@@ -638,6 +639,11 @@ Write a fresh, publication-ready brief now.`;
         openForBids: true,
       });
       syncMarketplaceAfterProjectPost(saved || project);
+      trackConversion(GA4_CONVERSION_EVENTS.JOB_POST_SUCCESS, {
+        project_id: (saved || project)?.id,
+        category: payload.category,
+        invited_advisor: Boolean(invitedAdvisor),
+      });
       setPublishedTitle(projectTitle);
       setPublished(true);
       toast.success(
@@ -654,6 +660,12 @@ Write a fresh, publication-ready brief now.`;
       };
       const saved = saveProject(localProject);
       syncMarketplaceAfterProjectPost(saved || localProject);
+      trackConversion(GA4_CONVERSION_EVENTS.JOB_POST_SUCCESS, {
+        project_id: (saved || localProject)?.id,
+        category: payload.category,
+        invited_advisor: Boolean(invitedAdvisor),
+        storage: "local",
+      });
       setPublishedTitle(projectTitle);
       setPublished(true);
       toast.success("Project published — now visible in Browse Projects.");

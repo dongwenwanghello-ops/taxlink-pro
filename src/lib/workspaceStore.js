@@ -4,6 +4,7 @@ import {
   getWorkspaceAccessGrant,
   workspaceIncludesEmail,
 } from "@/lib/workspaceAccess";
+import { GA4_CONVERSION_EVENTS, trackConversion, trackConversionOnce } from "@/lib/analytics";
 
 const KEY = "taxprouk_workspaces";
 export const MAX_FILE_BYTES = 400 * 1024;
@@ -211,6 +212,11 @@ export function createWorkspaceOnAward({ project, bid, clientEmail }) {
   });
 
   const saved = persistWorkspace(workspace);
+  trackConversion(GA4_CONVERSION_EVENTS.WORKSPACE_CREATED, {
+    project_id: project.id,
+    workspace_id: saved?.id,
+    bid_id: bid?.id,
+  });
   window.dispatchEvent(new CustomEvent("workspaceCreated", { detail: { workspace: saved } }));
   return saved;
 }
@@ -271,7 +277,16 @@ export function addWorkspaceMessage(projectId, { senderRole, senderName, senderE
     message: `${senderName}: ${typeMeta.label}`,
     meta: { message_type: messageType },
   });
-  return persistWorkspace(next);
+  const saved = persistWorkspace(next);
+  if (isFirstMessage) {
+    trackConversionOnce(GA4_CONVERSION_EVENTS.MESSAGE_SENT, `message_${projectId}`, {
+      project_id: projectId,
+      workspace_id: ws.id,
+      sender_role: senderRole,
+      message_type: messageType,
+    });
+  }
+  return saved;
 }
 
 export function addWorkspaceFile(projectId, { file, uploaderRole, uploaderName, uploaderEmail, category }) {

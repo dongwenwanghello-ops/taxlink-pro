@@ -27,6 +27,12 @@ import {
 } from "@/lib/professionalProfileModel";
 import { advisorUrl } from "@/lib/advisorProfiles";
 import { syncMarketplaceAfterProfileSave } from "@/lib/marketplaceIntegrations";
+import { auth } from "@/config/providers";
+import {
+  GA4_CONVERSION_EVENTS,
+  trackConversion,
+  trackConversionOnce,
+} from "@/lib/analytics";
 import {
   EMAIL_TRUST_INDICATORS,
   ONBOARDING_HERO,
@@ -318,6 +324,35 @@ export default function CreateProfile() {
         eventName: "early_access_signup",
         properties: { role: signup.role, steps: totalSteps },
       });
+
+      try {
+        await auth.login({
+          email: signup.email,
+          role: signup.role,
+          full_name: signup.full_name || signup.legal_name || signup.display_name,
+        });
+      } catch {
+        /* session optional for early-access save */
+      }
+
+      trackConversion(GA4_CONVERSION_EVENTS.SIGN_UP_SUCCESS, {
+        user_role: signup.role,
+        signup_source: signup.signup_source,
+      });
+
+      if (form.visibility === "public" || form.visibility === "hidden") {
+        trackConversion(GA4_CONVERSION_EVENTS.PROFILE_PUBLISH, {
+          user_role: signup.role,
+          visibility: form.visibility,
+        });
+      }
+
+      trackConversionOnce(
+        GA4_CONVERSION_EVENTS.ONBOARDING_COMPLETE,
+        `onboarding_${signup.email.toLowerCase()}`,
+        { user_role: signup.role, steps_completed: totalSteps },
+      );
+
       setSavedSignup({
         ...saved,
         advisorSlug: isProfessional
