@@ -2,32 +2,9 @@
  * TaxLink platform API facade — local-first; no external auth redirects.
  */
 import * as auth from "@/services/auth";
+import { entityApis } from "@/services/entityStore";
 
 function noop() {}
-
-function entityCollection() {
-  return {
-    async list() {
-      return [];
-    },
-    async filter() {
-      return [];
-    },
-    async get(id) {
-      return { id, _localOnly: true };
-    },
-    async create(payload) {
-      return {
-        id: `local-${Date.now()}`,
-        created_date: new Date().toISOString(),
-        ...payload,
-      };
-    },
-    async update(id, payload) {
-      return { id, ...payload };
-    },
-  };
-}
 
 export function createPlatformApi() {
   return {
@@ -49,12 +26,13 @@ export function createPlatformApi() {
       track: noop,
     },
     entities: {
-      JobPost: entityCollection(),
-      ProfessionalProfile: entityCollection(),
-      Review: entityCollection(),
-      User: entityCollection(),
-      Bid: entityCollection(),
-      FeedbackEntry: entityCollection(),
+      JobPost: entityApis.JobPost,
+      ProfessionalProfile: entityApis.ProfessionalProfile,
+      Review: entityApis.Review,
+      User: entityApis.User,
+      Bid: entityApis.Bid,
+      Workspace: entityApis.Workspace,
+      FeedbackEntry: entityApis.FeedbackEntry,
     },
     integrations: {
       Core: {
