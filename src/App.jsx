@@ -32,6 +32,7 @@ import ProjectWorkspace from "./pages/ProjectWorkspace"
 import MyBidsDemo from "./components/emptyStates/MyBidsDemo"
 import DataSyncSettings from "./pages/DataSyncSettings"
 import AdminDashboard from "./pages/AdminDashboard"
+import ComingSoonPage from "./components/foundation/ComingSoonPage"
 
 function AdvisorRedirect() {
   const { advisorId } = useParams();
@@ -72,6 +73,28 @@ const AuthenticatedApp = () => {
         <Route path="/" element={<Home />} />
         <Route path="/professionals" element={<Professionals />} />
         <Route path="/jobs" element={<Jobs />} />
+        <Route
+          path="/projects"
+          element={
+            <ComingSoonPage
+              title="Projects"
+              layer="Acquisition"
+              description="Unified projects hub — browse, post, and manage marketplace work. Use Browse Projects in the nav for the live listing."
+              backTo="/jobs"
+              backLabel="Browse live projects"
+            />
+          }
+        />
+        <Route
+          path="/dashboard"
+          element={
+            <ComingSoonPage
+              title="Dashboard"
+              layer="Foundation"
+              description="Role-specific home for professionals and clients — activity summary, next steps, and shortcuts."
+            />
+          }
+        />
         <Route path="/create-profile" element={<CreateProfile />} />
         <Route path="/post-job" element={<PostJob />} />
         <Route path="/reviews" element={<Reviews />} />
@@ -87,7 +110,17 @@ const AuthenticatedApp = () => {
         <Route path="/workspaces" element={<Workspaces />} />
         <Route path="/workspace/:projectId" element={<ProjectWorkspace />} />
         <Route path="/dev/data-sync" element={<DataSyncSettings />} />
+        <Route path="/compliance" element={<ComingSoonPage title="Compliance" layer="Compliance" description="Engagement readiness, CDD, AML, and client onboarding — central hub for regulatory workflows." />} />
+        <Route path="/compliance/engagement-letter" element={<ComingSoonPage title="Engagement Letters" layer="Compliance" description="Engagement letter templates and status tracking. Generation automation is planned for a later phase." backTo="/compliance" backLabel="Back to Compliance" />} />
+        <Route path="/compliance/cdd" element={<ComingSoonPage title="Customer Due Diligence (CDD)" layer="Compliance" description="CDD checklists and evidence collection. Automation is planned for a later phase." backTo="/compliance" backLabel="Back to Compliance" />} />
+        <Route path="/compliance/aml" element={<ComingSoonPage title="Anti-Money Laundering (AML)" layer="Compliance" description="AML policy alignment and risk flags. Automation is planned for a later phase." backTo="/compliance" backLabel="Back to Compliance" />} />
+        <Route path="/lounge" element={<ComingSoonPage title="Professional Lounge" layer="Community" description="Professional-only community — updates, peer discussion, and practice resources between projects." />} />
+        <Route path="/resources" element={<ComingSoonPage title="Resources Hub" layer="Community" description="Guides, templates, and reference content for clients and professionals." />} />
         <Route path="/admin" element={<AdminDashboard />} />
+        <Route path="/admin/users" element={<ComingSoonPage title="User Management" layer="Admin" description="Manage platform users, roles, and account status." backTo="/admin" backLabel="Admin overview" />} />
+        <Route path="/admin/projects" element={<ComingSoonPage title="Project Administration" layer="Admin" description="View and manage all marketplace projects." backTo="/admin" backLabel="Admin overview" />} />
+        <Route path="/admin/audit-logs" element={<ComingSoonPage title="Audit Logs" layer="Admin" description="Platform audit trail — auth, awards, compliance events, and admin actions." backTo="/admin" backLabel="Admin overview" />} />
+        <Route path="/admin/settings" element={<ComingSoonPage title="Platform Settings" layer="Admin" description="TaxLink configuration, feature flags, and environment settings." backTo="/admin" backLabel="Admin overview" />} />
       </Route>
 
       <Route path="*" element={<PageNotFound />} />
